@@ -1,0 +1,36 @@
+net:
+    arch: glow
+    affine: True
+    lu_conv: True
+    n_flows : 16
+    n_blocks : 4
+    gpus: [0]
+    benchmark: True
+
+training:
+    n_bits: 5
+    root_dir: data/glow_ffhq128
+    dataset: ffhq
+    in_channels: 3
+    img_size: 128
+    batch_size: 8
+    n_samples: 16
+    n_workers: 8
+    learning_rate: 0.0001
+    iter: 7000005
+    temp: 0.7
+    benchmark: True
+    z_dist: normal
+    resume: True
+sampling: 
+    num_samples: 16
+    temp: 0.4
+    img_size: 128
+    noise: 0
+    n_steps: 0
+    exp: False
+    out_dir: out_11
+similarity:
+    data: ['MEAN', 'STD', 'X', 'Z']
+    use_data_archive: True
+track_y: False # should stay F.

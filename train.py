@@ -39,8 +39,8 @@ def main(C):
 		cudnn.benchmark = C.training.benchmark
 
 	if C.training.resume: # or not C.resume:
-		# XXX change
-		C.model_dir = find_last_model_relpath(C.training.root_dir) # /model_{str(i + 1).zfill(6)}.pt'
+		# XXX changed
+		# C.model_dir = find_last_model_relpath(C.training.root_dir) # /model_{str(i + 1).zfill(6)}.pt'
 		if os.path.isfile(f'{C.training.root_dir}/best_model'): 
 			with open(f'{C.training.root_dir}/best_model', 'r') as bm:
 				C.model_dir = bm.read()
@@ -358,7 +358,7 @@ if __name__ == '__main__':
 
 	'''currently focusing on:'''
 	# C = ConfWrap(fn='config/ffhq128_c.yml')
-	# C = ConfWrap(fn='config/celeba128_c.yml')
+	C = ConfWrap(fn='config/celeba128_c.yml')
 
 	C.training.sample_dir = C.training.root_dir + '/samples'
 	main(C)
