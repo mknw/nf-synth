@@ -30,9 +30,9 @@ from random import randrange
 from warnings import warn
 from load_data import Attributes, select_model, load_network, \
                       load_ffhq, load_celeba
+from shell_util import maketree
 
-lstify = lambda s: [s] if isinstance(s, str) else s
-maketree = lambda l: [os.makedirs(p, exist_ok=True) for p in lstify(l)]
+
 
 def main(C, epochs=[160000], save=True, force=False):
 
@@ -48,10 +48,10 @@ def main(C, epochs=[160000], save=True, force=False):
 def analyse_epoch(C, model_meta_stuff = None):
 	device = torch.device("cuda:0" if torch.cuda.is_available() and len(C.net.gpus) > 0 else "cpu")
 	print("evaluating on: %s" % device)
-	
+	root_dir = C.training.root_dir
 	# select model.
 	if not model_meta_stuff:
-		fp_model_root, fp_model, fp_vmarker = select_model(C.training.root_dir, select_epoch=i)
+		fp_model_root, fp_model, fp_vmarker = select_model(root_dir, select_epoch=i)
 	else:
 		fp_model_root, fp_model, fp_vmarker = model_meta_stuff
 
@@ -60,7 +60,7 @@ def analyse_epoch(C, model_meta_stuff = None):
 	_stats = C.similarity.data
 
 	s_str = '-'.join(_stats).lower()
-	archive_filename = f'{C.training.root_dir}/{s_str}_{C.training.dataset}.npz'
+	archive_filename = f'{root_dir}/{s_str}_{C.training.dataset}.npz'
 
 	if os.path.isfile(archive_filename) and C.similarity.use_data_archive:
 		print('Found cached file, skipping computations of mean and std.')
@@ -70,20 +70,21 @@ def analyse_epoch(C, model_meta_stuff = None):
 				# .lower() because previous code and missing time.
 				stats[s.lower()] = data[s]
 	else:
-		if C.training.dataset == 'mnist':
+		if C.similarity.dataset == 'mnist':
 			loader = load_mnist_test(C)
-		if C.training.dataset == 'celeba':
+		if C.similarity.dataset == 'celeba':
 			loader = load_celeba(C.training.batch_size, C.training.img_size, test=True)
-		elif C.training.dataset == 'ffhq':
+		elif C.similarity.dataset == 'ffhq':
 			loader = load_ffhq(C.training.batch_size, C.training.img_size, test=True)
 
 		net, _ = load_network( fp_model, device, C.net)
 		net.eval()
 		stats = track_z(net, device, C.training.img_size, loader, stats=_stats)
 		np.savez(archive_filename, **stats)
+		stats = {k.lower(): v for (k, v) in stats.items()} # back.compatib.
 
 	''' Attributes annotation '''
-	if C.training.dataset == 'celeba':
+	if C.similarity.dataset == 'celeba':
 		if C.track_y:
 			warn("`track_y` Should not be used unless you know why.")
 			# no gt for FFHQ
@@ -102,11 +103,12 @@ def analyse_epoch(C, model_meta_stuff = None):
 	# 	attr_y = attr_y.df
 
 	''' filepaths '''
-	fp_distr = fp_model_root + '/distr' # distributions
-	fp_simil = fp_model_root + '/similarity' # similarity
-	fp_replace = fp_model_root + '/replace_from_grandz'
-	fp_pca = fp_model_root + '/pca'
-	fp_umap = fp_model_root + '/umap'
+	anls_root_dir = root_dir + '/similarity' # Analysis root dir_
+	fp_distr = anls_root_dir + '/distr' # distributions
+	fp_simil = anls_root_dir + '/similarity' # similarity
+	fp_replace = anls_root_dir + '/replace_from_grandz'
+	fp_pca = anls_root_dir + '/pca'
+	fp_umap = anls_root_dir + '/umap'
 	paths = [fp_distr, fp_simil, fp_replace, fp_pca]
 	# lstify = lambda s: [s] if isinstance(s, str)
 	maketree(paths)
@@ -114,63 +116,65 @@ def analyse_epoch(C, model_meta_stuff = None):
 	
 	
 	''' distributions analyses '''
-	print("analysing z distribution... ")
-	scatter_all(stats, fp_distr + '/meanstds.png', epoch)
-	if attr_y.ds == 'celeba':
-		# this is a bit of a hack to diff. between CelebA and FFHQ
-		scatter_attr(stats, attr_y, fp_distr + '/faces_subplots.png', epoch)
-	# # # violin_eachdigit(stats, fp_distr + '/dig_violins.png', epoch)
-	# ''' distance analysis '''
-	
-	# Add repetition for noint=False variant
-	if attr_y.ds == 'celeba':
-		distances, inst_count_mean = calculate_distance(stats, attr_y, measure='mean')
-		heatmap(distances, attr_y, fp_simil + '/distances_mean_100_int_count.png',
-					plot_title='Average distance between attributes in Z space (means)')
-		# noheatmap(inst_count_mean, filename=fp_simil+'/att_count_mean.png')
-		distances, inst_count_std = calculate_distance(stats, attr_y, measure='std')
-		heatmap(distances, attr_y, fp_simil + '/distances_std_100_int_count.png',
-					plot_title='Average distance between digits in Z space (std)')
-		# noheatmap(inst_count_std, filename=fp_simil+'/att_count_std.png')
-		# distances = calculate_distance(stats, attr_y, joint=True)
-		heatmap(distances, attr_y, fp_simil + '/distances.png')
+	# print("analysing z distribution... ")
+	# scatter_all(stats, fp_distr + '/meanstds.png')
+	# if attr_y.ds == 'celeba':
+	# 	# this is a bit of a hack to diff. between CelebA and FFHQ
+	# 	scatter_attr(stats, attr_y, fp_distr + '/faces_subplots.png', epoch)
+	# # # # violin_eachdigit(stats, fp_distr + '/dig_violins.png', epoch)
+	# # ''' distance analysis '''
+	# 
+	# # Add repetition for noint=False variant
+	# if attr_y.ds == 'celeba':
+	# 	distances, inst_count_mean = calculate_distance(stats, attr_y, measure='mean')
+	# 	heatmap(distances, attr_y, fp_simil + '/distances_mean_100_int_count.png',
+	# 				plot_title='Average distance between attributes in Z space (means)')
+	# 	# noheatmap(inst_count_mean, filename=fp_simil+'/att_count_mean.png')
+	# 	distances, inst_count_std = calculate_distance(stats, attr_y, measure='std')
+	# 	heatmap(distances, attr_y, fp_simil + '/distances_std_100_int_count.png',
+	# 				plot_title='Average distance between digits in Z space (std)')
+	# 	# noheatmap(inst_count_std, filename=fp_simil+'/att_count_std.png')
+	# 	# distances = calculate_distance(stats, attr_y, joint=True)
+	# 	heatmap(distances, attr_y, fp_simil + '/distances.png')
 
-	# distances = y_distance_z(stats)
-	# measure = 'mean'
-	# for m in range(distances.shape[0]):
-	# 	heatmap(distances[m], fp_simil + f'/pixelwise_dist_{measure}.png',
-	# 							 plot_title=f'pixelwise {measure} similarity')
-	# 	measure = 'std'
-	if attr_y.ds == 'celeba':
-		all_zs = grand_z(stats, attr_y)
-	elif attr_y.ds == 'ffhq':
-		all_zs = grand_z(stats, attr_y, reps=16)
+	# # distances = y_distance_z(stats)
+	# # measure = 'mean'
+	# # for m in range(distances.shape[0]):
+	# # 	heatmap(distances[m], fp_simil + f'/pixelwise_dist_{measure}.png',
+	# # 							 plot_title=f'pixelwise {measure} similarity')
+	# # 	measure = 'std'
+	# if attr_y.ds == 'celeba':
+	# 	all_zs = grand_z(stats, attr_y)
+	# elif attr_y.ds == 'ffhq':
 
-	# overall Z for each digit (averaged across batches).
-	import ipdb; ipdb.set_trace()
-	plot_grand_z(all_zs, attr_y.headers, fp_model_root + '/grand_zs_normimg.png')
-	plot_grand_z(all_zs, attr_y.headers, fp_model_root + '/grand_zs_normarray.png', norm='array')
-	plot_grand_z(all_zs, attr_y.headers, fp_model_root + '/grand_zs_normarrayb.png', norm='arrayb')
-	# plot_grand_z_rgb(all_zs, attr_y.columns, fp_model_root + '/grand_zs_rgb.png')
-	if 'net' not in dir():
-		net, _ = load_network( fp_model, device, C.net)
-		net.eval()
+	# all_zs = grand_z(stats, attr_y, reps=16)
 
-	
+	# # overall Z for each digit (averaged across batches).
+	# plot_grand_z(all_zs, attr_y.headers, anls_root_dir + '/grand_zs_normimg.png')
+	# plot_grand_z(all_zs, attr_y.headers, anls_root_dir + '/grand_zs_normarray.png', norm='array')
+	# plot_grand_z(all_zs, attr_y.headers, anls_root_dir + '/grand_zs_normarrayb.png', norm='arrayb')
+	# # plot_grand_z_rgb(all_zs, attr_y.columns, anls_root_dir + '/grand_zs_rgb.png')
+
+	# if 'net' not in dir():
+	# 	net, _ = load_network( fp_model, device, C.net)
+	# 	net.eval()
+
+	# 
 	# maketree(fp_replace)
 
-	with torch.no_grad():
-		for t in [.75, .9, 1.]:
-			for i in range(1, 11):
-				k = int(12288 / 2 ** i)
-				sample_from_crafted_z(net, all_zs, absolute=True, kept=k, device=device, reps=1,
-									 save_dir=fp_replace, temp=t) #monster_mode=True)
+	# with torch.no_grad():
+	# 	for t in [.75, .9, 1.]:
+	# 		for i in range(1, 11):
+	# 			dims = np.prod(all_zs.shape[1:])
+	# 			k = int(dims / 2 ** i)
+	# 			sample_from_crafted_z(net, all_zs, attr_y, absolute=True, kept=k, device=device, reps=1,
+	# 								 save_dir=fp_replace, temp=t) #monster_mode=True)
 
-			sample_from_crafted_z(net, all_zs, absolute=True, kept=12288, device=device, reps=1,
-									 save_dir=fp_replace, temp=t) #monster_mode=True)
+	# 		sample_from_crafted_z(net, all_zs, attr_y, absolute=True, kept=dims, device=device, reps=1,
+	# 								 save_dir=fp_replace, temp=t) #monster_mode=True)
 
-			# sample_from_crafted_z(net, all_zs, absolute=True, kept=12288, device=device, reps=1,
-			# 						 save_dir=fp_replace, temp=t, monster_mode=True)
+	# # 		# sample_from_crafted_z(net, all_zs, absolute=True, kept=12288, device=device, reps=1,
+	# # 		# 						 save_dir=fp_replace, temp=t, monster_mode=True)
 
 
 	''' dimensionality reduction '''
@@ -184,12 +188,12 @@ def analyse_epoch(C, model_meta_stuff = None):
 	# # # fp_pca += '/whiten'; 
 	fp_pca_red = fp_pca + '/red'
 	maketree([fp_pca, fp_pca_red])
-	for pick_components in [50, 100, 1000]:
+	for pick_components in [50, 100, 1000, 2000, 5000]:
 		print('computing PCA...{}...'.format(pick_components), end='')
 		pca = PCA(n_components=pick_components, whiten=True).fit(dataset) # dataset.data
 		if pick_components == 'mle':
 			print(f' N PCs found: {pca.n_components_}')
-		analyse_principal_components(pca,stats,attr_y,fp_pca,36, net, device)
+		analyse_principal_components(pca,stats,attr_y,fp_pca,16, net, device)
 		del pca
 
 	print('umap analysis')
@@ -202,8 +206,8 @@ def analyse_epoch(C, model_meta_stuff = None):
 	plot_sphere_umap(fp_umap, stats, attr_y, n_neighbors=10, metric='euclidean', n_components=3)
 	print('done')
 
-	# UMAP -- `test_umap` will use directories `<fp_model_root>/umap/{,3d}`
-	fn_prefix = fp_model_root + '/umap'
+	# UMAP -- `test_umap` will use directories `<anls_root_dir>/umap/{,3d}`
+	fn_prefix = anls_root_dir + '/umap'
 	os.makedirs(fn_prefix+'/3d', exist_ok=True)
 	for nn in [7, 20, 400]:
 		for md in [0, 0.1, 0.5]:
@@ -247,7 +251,8 @@ def PCA_eig_np(Z, k, center=True, scale=False):
 				'exp_var': explained_variance}
 
 
-def analyse_principal_components(pca, stats, att, fp_pca,pk, net=None, device=None):
+def analyse_principal_components(pca, stats, att, fp_pca,pk, net=None,
+		device=None):
 	'''
 	Arguments: 
 		- pca: sklearn.decomposition. PCA object. after calling .fit()
@@ -256,22 +261,32 @@ def analyse_principal_components(pca, stats, att, fp_pca,pk, net=None, device=No
 		- pk: componets to show in plots PCgrid.
 	'''
 
-	if isinstance(att, Attributes):
-		att=att.df # adapt to new Attributes object
+	# if isinstance(att, Attributes):
+	# 	att=att.df # adapt to new Attributes object
 
-	# print("plotting reconstructed Z... ", end='')
-	# sel_attr = [[i + 5*j for i in range(5)] for j in range(8)] # == 40
-	# for att_selection in sel_attr:
-	# 	fn = fp_pca + '/rZ_att-{}_ncomps-{}.png'.format(''.join([str(i) for i in att_selection]),
-	# 	                                              pca.n_components_)
-	# 	plot_rZ(pca, stats['z'], att, filename=fn, n_examples=6,
-	# 	       net=net, device=device, selected_attributes=att_selection)
-	# print("done.")
+	print("plotting reconstructed Z... ", end='')
+	if att.ds == 'celeba':
+		n_cols = 2
+		n_images = 20
+		sel_attr = [[i + n_cols*j for i in range(n_cols)] for j in range(n_images)] # == 40
+	elif att.ds == 'ffhq':
+		sel_attr = [0]
+
+	for att_selection in sel_attr:
+		if isinstance(att_selection, list):
+			fn = fp_pca + '/rZ_att-{}_ncomps-{}.png'.format(
+			                                ''.join([str(i) for i in att_selection]),
+			                                pca.n_components_)
+		else:
+			fn = f'{fp_pca}/rZ_att-{att_selection}_ncomps-{pca.n_components_}.png'
+		plot_rZ(pca, stats['z'], att, filename=fn, n_examples=6,
+		       net=net, device=device, selected_attributes=att_selection)
+	print("done.")
 
 	fn = fp_pca + '/PCgrid_first-{}.png'.format(pk)
 	if not os.path.isfile(fn):
 		print("plotting components in grid format... ", end='')
-		plot_PCgrid(pca, fn)
+		plot_PCgrid(pca, fn, pk=16) # pk for FFHQ
 		print("done.")
 
 	print("plotting variance explained... ", end='')
@@ -280,9 +295,9 @@ def analyse_principal_components(pca, stats, att, fp_pca,pk, net=None, device=No
 	print("done.")
 
 	os.makedirs(fp_pca, exist_ok=True)
-	for i in range(40):
-		print(f"plotting {att.columns[i]} reduced z's... ", end='')
-		fn = fp_pca + '/red/rZatt_{}-{}.png'.format(i, att.columns[i])
+	for i in range(len(att.headers)):
+		print(f"plotting {att.headers[i]} reduced z's... ", end='')
+		fn = fp_pca + '/red/rZatt_{}-{}.png'.format(i, att.headers[i])
 		plot_reduced_dataset(pca, stats['z'], att, k=15, att_ind=i, filename=fn)
 	print("done.")
 
@@ -292,24 +307,31 @@ def plot_rZ(pca, z_s, att, filename, n_examples, net, device, selected_attribute
 	from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 	'''z_s, y'''
 	if not isinstance(selected_attributes, int):
-		nrows, ncols = n_examples, len(selected_attributes)# 3 instances, 10 n of sel. categories.
-	else:
+		nrows, ncols = n_examples, len(selected_attributes) # 3 instances, 10 n of sel. categories.
+	elif isinstance(selected_attributes, int):
+		nrows, ncols = n_examples, 2
+		selected_attributes = [selected_attributes] * 2
+	elif selected_attributes == 'random':
 		nrows, ncols = n_examples, selected_attributes
 		selected_attributes = np.random.choice([i for i in range(40)], size=ncols, replace=False)
 
 
 	h_size = n_examples
-	fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(ncols*6,nrows*2))
+	C_H_W = z_s.shape[1:]
+	if C_H_W[-1]<=64:
+		figsize = (ncols*6,nrows*2)
+	else:
+		figsize = (ncols*7,nrows*2)
+	fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
 
 	pc_i = 1
 	net.eval()
-	C_H_W = z_s.shape[1:]
 	for col in range(ncols):
 		with torch.no_grad():
 			# ori_Z = z_s[dig_idx].astype(np.float32)
 			# Select nrows of celebrities
 			n_att = selected_attributes[col]
-			ori_Z = z_s[att.iloc[:, n_att].astype(bool)].astype(np.float32)
+			ori_Z = z_s[att.df.iloc[:, n_att].astype(bool)].astype(np.float32)
 			celeb_idx = np.random.randint(ori_Z.shape[0], size=nrows)
 			ori_Z = ori_Z[celeb_idx].copy()
 			
@@ -333,8 +355,7 @@ def plot_rZ(pca, z_s, att, filename, n_examples, net, device, selected_attribute
 			recX = recX.cpu().detach().numpy()
 			### normalize over array cel_rZ
 			cel_rZ = (rec_Z - rec_Z.min()) / (rec_Z.max() - rec_Z.min())
-			# axs[0, col].set_title(f"{col}")
-			axs[0, col].set_title(att.columns[n_att], fontsize='small')
+			axs[0, col].set_title(att.headers[n_att], fontsize='small')
 
 		for row in range(nrows):
 			
@@ -351,14 +372,18 @@ def plot_rZ(pca, z_s, att, filename, n_examples, net, device, selected_attribute
 			# Show original and reconstructed X
 			before = np.moveaxis(oriX[row].reshape(*C_H_W), 0, -1)
 			before = (before - before.min()) / (before.max() - before.min())
-			oriX_imbox = OffsetImage(before, zoom=1.2)
+			if C_H_W[-1]<=64:
+				zoom = 1.2
+			else:
+				zoom = .8
+			oriX_imbox = OffsetImage(before, zoom=zoom)
 			oX_ab = AnnotationBbox(oriX_imbox, xy=(-0.6, 0.5), 
 					          xycoords='data', boxcoords="axes fraction")
 			axs[row, col].add_artist(oX_ab)
 
 			after = np.moveaxis(recX[row].reshape(*C_H_W), 0, -1)
 			after = (after - after.min()) / (after.max() - after.min())
-			recX_imbox = OffsetImage(after, zoom=1.2)
+			recX_imbox = OffsetImage(after, zoom=zoom)
 			# x_imagebox.image.axes = axs[row, col]
 			rX_ab = AnnotationBbox(recX_imbox, xy=(1.6, 0.5), 
 					          xycoords='data', boxcoords="axes fraction")
@@ -372,7 +397,7 @@ def plot_rZ(pca, z_s, att, filename, n_examples, net, device, selected_attribute
 
 def plot_PCgrid(PCA, filename, pk=None, reconstruct=False):
 	if not pk: # Plot Komponents
-		pk = min(PCA.n_components_, 7*7)
+		pk = min(PCA.n_components_, 25)
 	PCs = PCA.components_
 	n_pcs = PCA.n_components_
 	var_exp = PCA.explained_variance_
@@ -395,6 +420,7 @@ def plot_PCgrid(PCA, filename, pk=None, reconstruct=False):
 
 			if pc_i < pk: # for the case where pca.n_PCs < 25
 				comp_img = (np.moveaxis(PCs[pc_i], 0, -1) - PCs[pc_i].min()) / (PCs[pc_i].max() - PCs[pc_i].min())
+				comp_img = (comp_img * 255).astype(np.uint8)
 				axs[row, col].imshow(comp_img)
 				axs[row, col].set_title('PC{}'.format(pc_i+1))
 			# else:  # if pc_i >= pk:
@@ -472,8 +498,14 @@ def plot_reduced_dataset(pca, z_s, att, k, att_ind, filename):
 		ratio_var_exp = pca.explained_variance_ratio_[:k][::-1]
 		'''z_s, y = label_zs(z_s)'''
 		
-		sel_att_df = subset_attributes(att, att_ind, overall_indexer=True, complementary=True)
-		red_z = pca.transform(z_s[ sel_att_df.iloc[:, -1]].reshape(sel_att_df.shape[0], -1))
+		# sel_att_df = subset_attributes(att, att_ind, overall_indexer=True, complementary=True)
+		comp = (len(att.headers) == 40)
+		sel_att_df = att.subset(att_ind, complementary=comp)
+		if len(sel_att_df.shape) > 1:
+			idxs = sel_att_df.iloc[:, -1]
+		else:
+			idxs = sel_att_df.iloc[:]
+		red_z = pca.transform(z_s[ idxs].reshape(sel_att_df.shape[0], -1))
 		reduced_z = red_z[:, :k][:,::-1]   # PCs['X'].T becomes (306,10000)
 	else: # should be type: sklearn.decomposition.PCA
 		raise NotImplementedError
@@ -487,7 +519,13 @@ def plot_reduced_dataset(pca, z_s, att, k, att_ind, filename):
 	# Use subset dataframe turn 1 hot vectors into indices,
 	# then add column for "both" categories if overlapping.
 	# import ipdb; ipdb.set_trace()
-	color_series, overlapping_attributes = category_from_onehot(sel_att_df)
+	if att.ds == 'celeba':
+		color_series, overlapping_attributes = category_from_onehot(sel_att_df)
+	else:
+		color_series = np.ones((5000,))
+		overlapping_attributes = 0
+
+
 	# color_series += 2 # make it red
 	
 	for row in range(n_pcs):
@@ -517,7 +555,7 @@ def plot_reduced_dataset(pca, z_s, att, k, att_ind, filename):
 		labels = att.columns[np.array(att_ind)] + ['both']
 	else:
 		assert isinstance(att_ind, int)
-		labels= [att.columns[att_ind]] + ['Complement cat.']
+		labels= [att.headers[att_ind]] + ['Complement cat.']
 	plt.legend(handles, labels, bbox_to_anchor=(.75, .75), loc="upper right", 
 	           bbox_transform=fig.transFigure)
 	
@@ -721,6 +759,7 @@ def umap_inverse_wrapper(stats, att, fp_umap, net=None, device=None, n_neighbors
 	# att_ind = (20, 31)
 	'''here''' # and call it in plot_inverse_umap
 	# import ipdb; ipdb.set_trace()
+	celeba = (len(att.headers) == 40) 
 	
 	if not n_neighbors_l:
 		n_neighbors_l = [5, 20, 100] # , 400]
@@ -741,8 +780,9 @@ def umap_inverse_wrapper(stats, att, fp_umap, net=None, device=None, n_neighbors
 									n_components=2, random_state=42)
 			umap = umap.fit(dataset)
 			inverse_sampling = True
-			for a_i in range(40):
-				attributes = subset_attributes(att, att_ind=a_i)
+			for a_i in range(len(att.headers)):
+				# attributes = subset_attributes(att, att_ind=a_i)
+				attributes = att.subset(a_i, complementary=celeba)
 				col_arr = attributes.iloc[:, 0]
 				sym_arr = attributes.iloc[:, 1]
 				names = attributes.iloc[:,0].name + '-' + attributes.iloc[:,1].name
@@ -1129,7 +1169,7 @@ def craft_z(grand_zs, absolute, kept=None, reps=10, fold=False, device="cuda:0")
 	return arr_mask, batch
 
 
-def sample_from_crafted_z(net, all_zs, absolute, kept, reps, device, save_dir, temp=.75, monster_mode=False):
+def sample_from_crafted_z(net, all_zs,att, absolute, kept, reps, device, save_dir, temp=.75, monster_mode=False):
 	''' 
 	Input:
 		all_zs: n-dimensional but also faces grand Z array.
@@ -1151,22 +1191,24 @@ def sample_from_crafted_z(net, all_zs, absolute, kept, reps, device, save_dir, t
 	
 	x = x.to('cpu').detach().numpy()
 
-	plot_grand_z(x, Attributes().headers, save_dir + f'/k{kept}_t{temp}_sample.png')
-	plot_grand_z(mask_zs, Attributes().headers, save_dir + f'/k{kept}_t{temp}_mask.png')
+	plot_grand_z(x, att.headers, save_dir + f'/k{kept}_t{temp}_sample.png')
+	plot_grand_z(mask_zs, att.headers, save_dir + f'/k{kept}_t{temp}_mask.png')
 	del x, z, mask_zs
 
 def plot_grand_z(grand_zs, names, filename, n_rows_cols=(6, 9), norm='img'):
 	# mpl.rc('text', usetex=True)
 	# mpl.rcParams['text.latex.preamble']=[r"\boldmath"]
-	if len(names) >= 6*9:
+	if len(names) >= 40: # CelebA
 		n_rows, n_cols = n_rows_cols
 		figsize = (16, 10)
-	elif len(names) == 1:
-		n_cols = n_rows = 1
-		figsize = (8, 8)
-	else:
+	elif len(names) == 1 and grand_zs.shape[0]>1:
 		n_cols = n_rows = int(grand_zs.shape[0] ** .5)
-		figsize = tuple([int(i * 3) for in [n_rows, n_cols]])
+		figsize = tuple([int(i * 3) for i in [n_rows, n_cols]])
+		names = names * grand_zs.shape[0]
+	elif len(names) == 1 and grand_zs.shape[0] == 1:
+		n_cols = n_rows = 1
+		grand_zs.shape[0]
+		figsize = (8, 8)
 
 	fig, axs = plt.subplots(n_rows, n_cols, sharex='all', sharey='all', figsize=figsize)
 
@@ -1183,6 +1225,7 @@ def plot_grand_z(grand_zs, names, filename, n_rows_cols=(6, 9), norm='img'):
 				img_z = (img_z - img_z.min()) / (grand_zs.max() - grand_zs.min())
 			elif norm == 'arrayb':
 				img_z = (img_z - grand_zs.min()) / (grand_zs.max() - grand_zs.min())
+			img_z = (img_z.copy() * 255).astype(np.uint8)
 			axs[row, col].imshow(img_z)
 			ttl = r"Grand-${{z}}$ for {}".format(names[n])
 			# axs[row, col].title.set_text(ttl, fontsize='xx-small')
@@ -1209,7 +1252,6 @@ def plot_grand_z_rgb(grand_zs, names, filename, n_rows_cols=(10, 12)):
 	# grand_zs = (grand_zs - grand_zs.min()) / (grand_zs.max() - grand_zs.min())
 
 	n = 0
-	# import ipdb; ipdb.set_trace()
 	for row in range(n_rows):
 		for col in range(0, n_cols, 3):
 			# import ipdb; ipdb.set_trace()
@@ -1506,13 +1548,14 @@ def color_variant(hex_color, brightness_offset=-50):
 	return "#" + "".join(hex_string)
 
 
-def scatter_all(stats, filename, n_epoch):
+def scatter_all(stats, filename, n_epoch=False):
 	colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
 			  '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
 			  '#bcbd22', '#17becf']
 	fig, ax = plt.subplots()
 	stds, means = [stats['std'], stats['mean']]
-	plt.title('z space stats for model at epoch {}'.format(n_epoch))
+	if n_epoch:
+		plt.title('z space stats for model at epoch {}'.format(n_epoch))
 	plt.xlabel('mean')
 	plt.ylabel('std')
 
@@ -1695,7 +1738,7 @@ if __name__ == '__main__':
 	from  config.config import ConfWrap
 	C = ConfWrap(fn='config/ffhq128_c.yml')
 	# C = ConfWrap(fn='config/glow_celeba.yml')
-	C.version = 'V-1.1' # remove?
+	# C.version = 'V-1.1' # remove?
 
 	C.force = False
 	C.track_y = False

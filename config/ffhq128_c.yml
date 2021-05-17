@@ -33,4 +33,5 @@ sampling:
 similarity:
     data: ['MEAN', 'STD', 'X', 'Z']
     use_data_archive: True
+    dataset: ffhq
 track_y: False # should stay F.

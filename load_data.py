@@ -838,7 +838,7 @@ def find_last_model_relpath(fp, only_int=False):
 	else:
 		return out_fp
 
-def select_model(model_root, analyse_version=None, vmarker_fn='/version', 
+def select_model(model_root, analyse_version=False, vmarker_fn='/version', 
 					select_epoch=False, figures=6):
 	''' Select EPOCH according to version specifications. (change function name)
 	If a specific analysis version is verified, skip that epoch and select a model 
@@ -847,15 +847,23 @@ def select_model(model_root, analyse_version=None, vmarker_fn='/version',
 		- fp_vmarker : int --  file containing `version`
 		- fp_model : str -- file to model.pth.tar
 		'''
+
 	verified_ver = True
 	while verified_ver:
 		if select_epoch == "auto":
+			if os.path.isfile(f'{model_root}/best_model'): 
+				with open(f'{model_root}/best_model', 'r') as bm:
+					fp_model_root = bm.read()
+				fp_model = fp_model_root + '/model.pth.tar'
+				print(f'best model found: {fp_model}')
+				return fp_model_root, fp_model, False
 			model_epoch = find_last_model_relpath(model_root, True)
 		elif select_epoch: # is anything else:
 			assert isinstance(select_epoch, int), 'Epoch must be int'
 			model_epoch = select_epoch
 		else:
 			raise NotImplementedError("Specify select_epoch kwarg.") # (was random epoch selection)
+
 		fp_model_root = model_root + f'/epoch_{str(model_epoch).zfill(figures)}' #  + str(model_epoch)
 		fp_vmarker = fp_model_root + vmarker_fn
 		if select_epoch: # old code. To be removed.
@@ -865,7 +873,7 @@ def select_model(model_root, analyse_version=None, vmarker_fn='/version',
 			verified_ver = verify_version(fp_vmarker, str(analyse_version))
 	fp_model = fp_model_root + '/model.pth.tar'
 	print('selected model at {}th epoch'.format(model_epoch))
-	return fp_model_root, fp_model, fp_vmarker
+	return fp_model_root, fp_model, False # Can remove.
 
 if __name__=='__main__':
 

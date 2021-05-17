@@ -120,6 +120,13 @@ def train(config, net, device, optimizer, start_epoch, z_sample=None):
 	for i in pbar:
 		x, _ = next(dataset)
 		x = x.to(device)
+		# if False:
+			# # quantise
+			# # x = x * 255
+			# # if config.n_bits < 8:
+			# # 	x = torch.floor(x / 2 ** (8 - config.n_bits))
+			# # x * n_bins
+			# x = torch.floor(x *  n_bins - 0.5)
 
 		if i == 0:
 			with torch.no_grad():
@@ -137,8 +144,9 @@ def train(config, net, device, optimizer, start_epoch, z_sample=None):
 		warmup_lr = config.learning_rate
 		optimizer.param_groups[0]['lr'] = warmup_lr
 		optimizer.step()
+		# TODO: invert meters
 		loss_meter.update(loss.item(), x.size(0))
-		bpd_meter.update(bits_per_dim(x, loss_meter.avg))
+		bpd_meter.update(loss*quant_bpd)
 		# logP: {log_p.item():.3f}; logdet: {log_det.item():.3f}; lr: {warmup_lr:.4f}; 
 		pbar.set_description(
 				f'BPD: {loss.item():.3f}; NLL: {loss.item()*quant_bpd:.3f}, imgs: {p_imgs}'

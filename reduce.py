@@ -38,17 +38,18 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 	# Load statistics:
 
 	s_str = = '-'.join(C.data) # stats-string
-	C.data_fn = f"{s_str}_{C.training.dataset}.npz"
-	archive_filename = f'{model_root_fp}/{C.data_fn}'
+	data_fn = f"{s_str}_{C.training.dataset}.npz"
+	archive_filename = f'{model_root_fp}/{data_fn}'
+	# C.data_fn = data_fn
 	import ipdb; ipdb.set_trace()
-	potential_archive_fn = glob(f'{model_root_fp}/*{C.data_fn}')
+	potential_archive_fn = glob(f'{model_root_fp}/*{data_fn}')
 	if len(potential_archive)==1:
 		archive_filename = potential_archive_fn[0]
 		# XXX DEBUG
 
 	if os.path.isfile(archive_filename) and C.use_data_archive:
-		print(f'Loading saved arrays: `{C.data_fn}`')
-		print(f'and {C.data_fn}`', end='')
+		print(f'Loading saved arrays: `{data_fn}`')
+		print(f'and {data_fn}`', end='')
 		dataset = np.load(archive_filename)
 	else:
 		# Z's computation is expensive and should only
@@ -159,6 +160,7 @@ def compute_reduction_reupsampling(C, attributes, data=None, data_x=None, reduce
 	''' Save x's and z's, visualized pre (original) 
 	and post (reconstructed) dimensionality reduction.'''
 	# blond vs brown air, smiling vs. wearing hat.
+	import ipdb; ipdb.set_trace()
 	att_ind = [5, 11, 31, 35]
 	ko = '_ko' if C.kept_out else ''
 	att_str = '-'.join([str(a) for a in att_ind])
