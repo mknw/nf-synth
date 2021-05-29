@@ -2,7 +2,9 @@
 
 *The present code is in prototype stage.*
 
-This repository contains the code for the MSc Thesis: *"Normalising Flows: Seeing Latent Space"*.
+This repository contains the code for the MSc Thesis: *"Normalising Flow: Seeing Latent Space"*. Written and coded by Michael Accetto and supervised by Jakub Tomczak.
+
+## Project
 
 It is intended to compress images with continuous, Normalising Flow (NF) generative models.
 
