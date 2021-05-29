@@ -49,7 +49,7 @@ A more detailed description will be soon pushed to `main`.
 ![Sample](sample.png)
 
 Trained model on FFHQ128 and celebA128 datasets. 
-The model contains a learned prior, possibility train additive and affine coupling layer variants,
+The model contains a learned prior, possibility to train additive and affine coupling layer variants,
 exponential function instead of sigmoid. 
 
 ![Samples on training FFHQ-128](n-16_sample_t-0.50.png)
