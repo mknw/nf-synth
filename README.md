@@ -54,5 +54,3 @@ The model contains a learned prior, possibility to train additive and affine cou
 exponential function instead of sigmoid. 
 
 ![Samples on training FFHQ-128](n-16_sample_t-0.50.png)
-
-Progression of samples during training. Sampled once per 100 iterations during training.
