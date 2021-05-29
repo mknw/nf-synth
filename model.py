@@ -344,6 +344,8 @@ class Block(nn.Module):
 
 
 class Glow(nn.Module):
+	''' Adapted from https://github.com/rosinality/glow-pytorch/blob/master/model.py '''
+
 	def __init__(self, in_channel, n_flow, n_block, affine=True, conv_lu=True):
 		super().__init__()
 
@@ -356,7 +358,7 @@ class Glow(nn.Module):
 
 	def forward(self, input, reverse=False, resample=False, reconstruct=False, partition=False):
 		if not reverse:
-			if resample:
+			if resample or reconstruct:
 				raise Exception('`reconstruct=True` and `resample=True` only accepted in combination \
 						with argument `reverse=True`. For reconstructing latent space from \
 						image space, set `partition=True` and `reverse=False`.')

@@ -12,10 +12,10 @@ training:
     dataset: celeba
     in_channels: 3
     img_size: 128
-    batch_size: 32 # 8 if gpus = [0]
+    batch_size: 32 # 8 if gpus = [0]; 32 if gpus = [0, 1]
     n_samples: 16
     n_workers: 8
-    learning_rate: 0.0001
+    learning_rate: 0.0005
     iter: 5000001
     temp: 0.7
     benchmark: True

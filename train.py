@@ -154,29 +154,33 @@ def train(config, net, device, optimizer, start_epoch, z_sample=None):
 		p_imgs += x.size(0)
 
 		if i % 1000 == 0:
+			del x
+			# torch.cuda.empty_cache()
 			# save model (note: can be factorised)
 			if i % 10000 == 0:
 				# TEST
 				model_dir = f'{config.root_dir}/epoch_{str(i).zfill(figs)}'
-				os.makedirs(model_dir) # , exist_ok=True)
+				os.makedirs(model_dir, exist_ok=True)
 				tenK_ep_ = glob(f"{config.root_dir}/epoch_*")
 				tenK_ep_.sort()
 			else:
-				tenK_ep_ = None
+				tenK_ep_ = []
 				model_dir = config.root_dir
 				
-			if loss_meter.avg < best_loss: 
+			if loss_meter.avg < best_loss or tenK_ep_:
 				torch.save({'net': net.state_dict(), 'loss': loss_meter.avg,
 				            'epoch': i},  f'{model_dir}/model.pth.tar')
 				torch.save(optimizer.state_dict(), f'{model_dir}/optim.pt')
-				with open(f'{config.root_dir}/best_model', 'w') as bm:
-					bm.write(model_dir)
-				best_loss = loss_meter.avg
-				print(f"Model with loss: {loss_meter.avg} saved to {model_dir}/model.pth.tar")
-
-			if tenK_ep_ and len(tenK_ep_) > 1:
-				for prev_epoch in tenK_ep_[:-1]:
-					rmtree(prev_epoch) # but keep backup model(s)
+				if loss_meter.avg < best_loss:
+					with open(f'{config.root_dir}/best_model', 'w') as bm:
+						bm.write(model_dir)
+					best_loss = loss_meter.avg
+					print(f"Ep.{i}: Model with loss: {loss_meter.avg} saved to {model_dir}/model.pth.tar")
+					# only remove previous checkpoints if loss improves.
+					if len(tenK_ep_) > 5:
+						for prev_epoch in tenK_ep_[:-4]:
+							rmtree(prev_epoch) # but keep backup model(s)
+			# Sampling.
 			if config.z_dist == 'normal':
 				z_sample = find_or_make_z(config.z_path, reuse=True)
 			else: raise NotImplementedError
@@ -186,7 +190,7 @@ def train(config, net, device, optimizer, start_epoch, z_sample=None):
 				                             png_filename, normalize=True,
 				                             nrow = int(config.n_samples ** 0.5))
 			del z_sample
-			torch.cuda.empty_cache()
+			# torch.cuda.empty_cache()
 			with open(f'{config.root_dir}/log', 'a') as l:
 				report = f'{loss_meter.avg:.5f},{bpd_meter.avg},{log_p.item():.5f},{p_imgs}\n'
 				l.write(report)
@@ -363,10 +367,12 @@ if __name__ == '__main__':
 	# C = ConfWrap(fn='config/ffhq256lu_c.yml')
 	# C = ConfWrap(fn='config/glow_celeba_aff.yml')
 	# C = ConfWrap(fn='config/ffhq64_gamma_c.yml')
+	conf_name = 'config/celeba128_c.yml'
+	parser = ArgumentParser(description='RealNVP training on various datasets.')
+	parser.add_argument('--config', '-c', default=conf_name)
+	parser.parse_args()
 
-	'''currently focusing on:'''
-	# C = ConfWrap(fn='config/ffhq128_c.yml')
-	C = ConfWrap(fn='config/celeba128_c.yml')
+	C = ConfWrap(fn=parser.config)
 
 	C.training.sample_dir = C.training.root_dir + '/samples'
 	main(C)

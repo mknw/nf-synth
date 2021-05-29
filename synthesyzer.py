@@ -21,7 +21,7 @@ from random import randrange
 class  Synthesizer(object):
 	def __init__(self, C, steps = ['net', 'pca', 'umap'],
 							net=None, device=None,
-							store_config=True, svd_solver='full'):
+							store_config=True, svd_solver='auto'):
 
 		np.random.seed(24)
 		if isinstance(steps, str):
@@ -48,16 +48,16 @@ class  Synthesizer(object):
 
 		for step in steps:
 			if step == 'pca':
-				self.models[step] = PCA(n_components=C.pca.n_pcs, whiten = C.pca.whiten,
+				self.models[step] = PCA(n_components=C.pca_n_pcs, whiten = C.pca_whiten,
 						                  random_state=42, svd_solver=svd_solver)
 			if step == 'umap':
-				self.models[step] = UMAP(n_neighbors = C.umap.nn, min_dist = C.umap.min_dist,
-			                    n_components = C.umap.n_comps, random_state=42)
+				self.models[step] = UMAP(n_neighbors = C.umap_nn, min_dist = C.umap_min_dist,
+			                    n_components = C.umap_n_comps, random_state=42)
 		if store_config:
 			self.C = C
-			self.channels = C.training.in_channels
-			self.img_size = C.training.img_size
-			self.batch = C.training.batch_size
+			self.channels = C.in_channels
+			self.img_size = C.img_size
+			self.batch = C.batch_size
 
 	def fit(self, data, skip_l=['net']):
 		''' Main fit method .

@@ -119,14 +119,16 @@ def load_ffhq(batch=256, image_size=128, test=False, shuffle=False,
 			transforms.Resize(size=image_size),
 			transforms.RandomHorizontalFlip(),
 			transforms.ToTensor(),
-			transforms.Normalize(norm[0], norm[1]),
+			transforms.Normalize(norm[0], norm[1])
 		])
+		shuffle=True
 	else:
 		# test split
 		transform = transforms.Compose([
 		transforms.Resize(size=image_size),
 		transforms.ToTensor(),
-		transforms.Normalize((0.5, 0.5, 0.5), (1, 1, 1)),
+	# 	transforms.Normalize((0.5, 0.5, 0.5), (1, 1, 1)),
+		transforms.Normalize(norm[0], norm[1])
 	])
 	dataset = datasets.ImageFolder(root = path, transform=transform)
 	if not test:
@@ -138,11 +140,15 @@ def load_ffhq(batch=256, image_size=128, test=False, shuffle=False,
 	return loader
 
 
-def load_celeba(batch=32, image_size=64, test=False, shuffle=False):
+def load_celeba(batch=32, image_size=64, test=False, shuffle=False, norm=None,
+	            seed=2147483647):
 	# raise NotImplementedError("See sample_celeba")
 	''' Single loop iterator, mainly used for stats retrieval.'''
 	warnings.warn('This function should only be used for similarity'
 	              'analysis. For training a network, see `sample_celeba`.')
+	torch.manual_seed(seed)
+	if norm is None:
+		norm = ((0.5, 0.5, 0.5), (1, 1, 1)) # channel mean, std
 	if not test:
 		split = 'train'
 		transform = transforms.Compose([
@@ -150,6 +156,7 @@ def load_celeba(batch=32, image_size=64, test=False, shuffle=False):
 			transforms.Resize(size=image_size),
 			transforms.RandomHorizontalFlip(),
 			transforms.ToTensor(),
+			transforms.Normalize(norm[0], norm[1])
 		])
 		shuffle=True
 	else:
@@ -158,6 +165,7 @@ def load_celeba(batch=32, image_size=64, test=False, shuffle=False):
 		transforms.CenterCrop(160),
 		transforms.Resize(size=image_size),
 		transforms.ToTensor(),
+		transforms.Normalize(norm[0], norm[1])
 	])
 	print(f'shuffle set to {shuffle} for split: {split}')
 	target_type = ['attr', 'bbox', 'landmarks']
@@ -647,6 +655,8 @@ def load_network(model_dir, device, conf, checkpoint=True):
 		except RuntimeError as re:
 			print(re)
 			raise ArchError('There is a problem importing the model, check parameters.')
+		print(f"Resuming from epoch: {checkpoint['epoch']}"
+				f"with loss: {checkpoint['loss']}")
 
 	return net, loss_fn
 
@@ -714,7 +724,8 @@ class Attributes:
 				attribute_names = list(selection.columns)
 			complement_categs_names = ['comp_' + c for c in attribute_names]
 			# concatenate selected attributes df with its complementary.
-			selection= pd.concat([selection, (self.df.iloc[:, np.array(idxs)] == 0)], axis=1)
+			selection= pd.concat([selection, (self.df.iloc[:, idxs] == 0)], axis=1)
+			# selection= pd.concat([selection, (self.df.iloc[:, np.array(idxs)] == 0)], axis=1)
 			selection.columns = attribute_names + complement_categs_names
 		if overall_idx:
 			index_all = (selection== 1).any(axis=1)

@@ -1,7 +1,6 @@
 #!/var/scratch/mao540/miniconda3/envs/maip-venv/bin/python
 
 from itertools import product
-from load_data import Attributes
 from matplotlib import pyplot as plt
 import numpy as np
 
@@ -143,7 +142,7 @@ def build_quadrant(step, data, axs, att_names=None, haunted=0): # , std=None):
 		##  	import ipdb; ipdb.set_trace()
 		# we normalize **parsimoniously** to preserve as much structure:
 		#1. Subtract the minimum, only for Z's with values < 0
-		try:
+		try: # should be solved (step_vector from archive was null)
 			d_min = data.min(dim, keepdims=True)
 		except TypeError:
 			import ipdb; ipdb.set_trace()
@@ -160,8 +159,10 @@ def build_quadrant(step, data, axs, att_names=None, haunted=0): # , std=None):
 		# data = (data - d_min) / (d_max) # remove extra-white aberrations
 		n_dp = data.shape[0] # n datapoints
 		img_size = (data.size // (n_dp * 3)) **.5
-		print(f'{img_size} images reshaped')
+		# print(f'{img_size} images reshaped')
 		img_size = int(img_size)
+		if img_size == 1:
+			import ipdb; ipdb.set_trace()
 		data = np.moveaxis(data.reshape(n_dp, 3, img_size, img_size), 1, -1)
 		col_count = 0
 		for row in range(4):

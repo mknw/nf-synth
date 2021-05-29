@@ -16,6 +16,7 @@ from render import save_dataset_reduction, plot_compression_flow
 from similarity import track_z
 from load_data import load_celeba, load_ffhq
 from glob import glob
+from argparse import ArgumentParser
 
 
 def main(C, epoch=4340000, save=True):
@@ -32,36 +33,36 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 	
 	model_root_fp, model_fp, vmarker_fp = model_meta_stuff
 	# if only plotting is needed and all vecs are stored, do not load_net 
-	if not C.no_model:
+	if not C.compress.no_model:
 		net, _ = load_network( model_fp, device, C.net)
 	epoch = model_root_fp.split('_')[-1]
 	# Load statistics:
 
-	s_str = = '-'.join(C.data) # stats-string
-	data_fn = f"{s_str}_{C.training.dataset}.npz"
+	s_str = '-'.join(map(lambda x: x.lower(), C.compress.data)) # stats-string
+	data_fn = f"{s_str}_{C.compress.dataset}.npz"
 	archive_filename = f'{model_root_fp}/{data_fn}'
 	# C.data_fn = data_fn
-	import ipdb; ipdb.set_trace()
-	potential_archive_fn = glob(f'{model_root_fp}/*{data_fn}')
-	if len(potential_archive)==1:
-		archive_filename = potential_archive_fn[0]
-		# XXX DEBUG
+	if C.compress.use_data_archive:
+		potential_archive_fn = glob(f'{model_root_fp}/*{data_fn}')
+		if len(potential_archive_fn)==1:
+			archive_filename = potential_archive_fn[0]
+			print(f"matched archive: {archive_filename}")
 
-	if os.path.isfile(archive_filename) and C.use_data_archive:
-		print(f'Loading saved arrays: `{data_fn}`')
-		print(f'and {data_fn}`', end='')
-		dataset = np.load(archive_filename)
+		if os.path.isfile(archive_filename):
+			print(f'Loading saved arrays: `{s_str}`', end='')
+			print(f' and {data_fn}`')
+			dataset = np.load(archive_filename)
 	else:
 		# Z's computation is expensive and should only
 		# be computed once. Therefore, we do it now
 		# and save it to disk.
-		if C.training.dataset == 'celeba':
+		if C.compress.dataset == 'celeba':
 			loader = load_celeba(128, C.training.img_size, test=True)
-		elif C.training.dataset == 'ffhq':
+		elif C.compress.dataset == 'ffhq':
 			loader = load_ffhq(C.training.batch_size,
 			                  C.training.img_size, test=True, shuffle=False)
-		dataset = track_z(net, device, C.training.img_size, loader, stats=C.data)
-		if C.archive_data:
+		dataset = track_z(net, device, C.training.img_size, loader, stats=C.compress.data)
+		if C.compress.archive_data:
 			np.savez(archive_filename, **dataset)
 
 	''' filepaths '''
@@ -69,61 +70,76 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 
 	data_z = dataset['Z'].reshape(dataset['Z'].shape[0], -1)
 	data_x = dataset['X'].reshape(dataset['X'].shape[0], -1)
-	attributes = Attributes().fetch()
+	if C.compress.dataset == 'celeba':
+		attributes = Attributes().fetch()
+	elif C.compress.dataset == 'ffhq':
+		attributes = Attributes(dataset='ffhq')
 
 	## make cache directory for all analyses (PCA red. + reupsampling).
-	root_d = f'{C.training.root_dir}/{C.training.dataset}'
+	root_d = f'{C.training.root_dir}/compress_{C.compress.dataset}'
 	os.makedirs(root_d, exist_ok=True)
-	C.cache_bn = make_basename(root_d, cache=True)
+	# C.cache_bn = make_basename(root_d, cache=True)
 
-	# if not C.no_model:
-	# 	C.pca.n_pcs = C.pca.n_pcs_sc
-	# 	reducer = Synthesizer(C, steps = C.steps[0],
+	# if not C.compress.no_model:
+	# 	C.compress.pca.n_pcs = C.compress.pca.n_pcs_sc
+	# 	reducer = Synthesizer(C, steps = C.compress.steps[0],
 	#                       net=net, device=device)
 	# C.basename = make_basename(root_d, subdir='pca', pca_pcs=C.pca.n_pcs_sc)
 	# pca_reduction_on_attributes(C, reducer, data_z, attributes)
 
 	# re-upsampling/reconstruction visualization.
-	reup_umap_npc = [i for i in range(*eval(C.umap.n_comps))]
-	reup_pca_npc = [int((i**3.5)) for i in range(*eval(C.pca.n_pcs_reupsam))]
-	for stps in C.steps: 
+	reup_umap_npc = [i for i in range(*eval(C.compress.umap_n_comps))]
+	reup_pca_npc = [int((i**3.5)) for i in range(*eval(C.compress.pca_n_pcs))]
+	reup_pca_npc += [data_z.shape[0]-10]
+	steps_l = C.compress.steps
+	for stps in steps_l: 
 		reup_umap_l = (['empty'] if 'umap' not in stps else reup_umap_npc)
 		for umap_pcs in reup_umap_l:
-			# if not C.no_model:
+			# if not C.compress.no_model:
 			for pca_pcs in reup_pca_npc:
-				for ds in C.dataset_ratios:
-					if pca_pcs >= int(ds * data_z.shape[0]):
-						continue
+				for ds in C.compress.dataset_ratios:
 					for kept_out in [True, False]:
-						C.umap.n_comps = umap_pcs
-						C.dataset_ratio = ds
+						if (kept_out and pca_pcs >= int(ds * data_z.shape[0])-16) \
+						   or (not kept_out and pca_pcs >= int(ds * data_z.shape[0])):
+							continue
+						# in function use
+						C.steps = stps # !
+						C.ds_ratio = ds
 						C.kept_out = kept_out
-						C.pca.n_pcs = pca_pcs
+						# for Synth use:
+						C.compress.umap_n_comps = umap_pcs
+						C.compress.pca_n_pcs = pca_pcs
+						# make folders
 						C.basename = make_basename(root_d, subdir=ds, pca_pcs=pca_pcs,
 						                           umap_pcs=umap_pcs)
 						C.cache_bn = make_basename(root_d, subdir=ds, pca_pcs=pca_pcs,
-						                           umap_pcs=umap_pcs, cache=True)
+						                           umap_pcs=umap_pcs, quantise_bits=C.compress.quantise, cache=True)
 						print(f'Analysing synth with \
-						        PCA nps:{C.pca.n_pcs}, UMAP dims: {C.umap.n_comps}, \
-						        ko:{C.kept_out}, ratio:{C.dataset_ratio}')
-						if not C.no_model:
-							reducer = Synthesizer(C, steps=stps, net=net,
+						        PCA nps:{pca_pcs}, UMAP dims: {umap_pcs}, \
+						        ko:{C.kept_out}, ratio:{ds}')
+						if not C.compress.no_model:
+							reducer = Synthesizer(C.compress, steps=stps, net=net,
 						                           device=device)
 							compute_reduction_reupsampling(C, attributes, data_z,
-							                        data_x, reducer)
+							                        data_x, reducer, quantise_bits=C.compress.quantise)
 						else:
 							compute_reduction_reupsampling(C, attributes, data_z,
-							                               data_x)
+							                               data_x, quantise_bits=C.compress.quantise)
 
 
-def make_basename(root, mark_time=False, subdir=None, pca_pcs=None, umap_pcs=None, cache=False):
+def make_basename(root, mark_time=False, subdir=None, pca_pcs=None, umap_pcs=None, cache=False,
+		quantise_bits=False):
 	time = ''
 	basename = root 
 	# two subdirectories
 	if subdir:
 		# prefix (used for ratio in reupsam, otherwise analysis type ('pca'))
 		if isinstance(subdir, (int, float)):
-			basename += f'/rat{subdir}'
+			# basename += f'/rat{subdir}' # XXX !!! XXX
+			if quantise_bits:
+				basename += f'/q{quantise_bits}-rat{subdir}' # XXX !!! XXX
+			else:
+				basename += f'/noq-rat{subdir}' # XXX !!! XXX
 		else:
 			basename += f'/{subdir}'
 	if cache:
@@ -156,65 +172,87 @@ def pca_reduction_on_attributes(C, reducer, data, attributes):
 		fn = f'{C.basename}_att{i}.png'
 		save_dataset_reduction(data_red, var_exp_ratio, attributes, k=10, att_ind=i, filename=fn)
 
-def compute_reduction_reupsampling(C, attributes, data=None, data_x=None, reducer=None):
+def compute_reduction_reupsampling(C, attributes, data=None, data_x=None, reducer=None,
+		quantise_bits=8, seed=1823904943):
 	''' Save x's and z's, visualized pre (original) 
 	and post (reconstructed) dimensionality reduction.'''
-	# blond vs brown air, smiling vs. wearing hat.
-	import ipdb; ipdb.set_trace()
-	att_ind = [5, 11, 31, 35]
+	rng = np.random.default_rng(seed=seed)
+	if attributes.ds == 'celeba':
+		# Cat's: blond, brown air, smiling, wearing hat.
+		att_ind = [5, 11, 31, 35] + 1 # XXX !!! XXX
+		att_str = '-'.join(map(str, att_ind)) # [str(a) for a in att_ind])
+	elif attributes.ds == 'ffhq':
+		att_ind = 0
+		att_str = 'test-split'
 	ko = '_ko' if C.kept_out else ''
-	att_str = '-'.join([str(a) for a in att_ind])
-	ds_trunk_idx = int(data.shape[0] * C.dataset_ratio)
-	ds_rat = f'_{ds_trunk_idx}' if C.dataset_ratio != 1 else ''
+	ds_trunk_idx = int(data.shape[0] * C.ds_ratio)
+	ds_rat = f'_{ds_trunk_idx}' if C.ds_ratio != 1 else ''
 	filename = f'{C.basename}_{att_str}{ko}{ds_rat}.png'
 	cache_fn = f'{C.cache_bn}_{att_str}{ko}{ds_rat}.npz'
 
 	# middle two keys change depending on whether UMAP is used.
 	step_vec_keys = ['X', 'Z', 'PC/eigenZ', 'PC/UMAP', 'rec_Z', 'rec_X']
-	import ipdb; ipdb.set_trace()
-	### XXX debug from here (data is mis-shaped)
 
-	if C.training.dataset == 'celeba':
+	if C.compress.dataset == 'celeba':
 		kept_out_df, kept_out_idcs = attributes.pick_last_n_per_attribute(att_ind, n=4)
 		att_names = list(kept_out_df.columns)
-	else:
-		kept_out_idcs = range(16)
-		att_names = [f'row {n}' for n in range(1, 4)]
+	elif C.compress.dataset == 'ffhq':
+		# kept_out_idcs = range(16)
+		kept_out_idcs = rng.choice(5000, 16, False)
+		att_names = [f'row {n}' for n in range(1, 5)]
 
-	if C.use_step_archive and os.path.isfile(cache_fn):
+	if C.compress.use_step_archive and os.path.isfile(cache_fn):
 		step_vector = list()
 		with np.load(cache_fn) as data:
 			for k in step_vec_keys:
 				step_vector.append(data[k])
-	elif not C.no_model:
+	elif not C.compress.no_model:
 		# att_ind = list(range(0, 40, 10))
 		# split dataset
 		z_s = data[kept_out_idcs].copy()
 		x_s = data_x[kept_out_idcs].copy()
-		
+		# TODO: add individual image transform for
+		# stand-along compression
+		# if mono: 
+		# 	for d in data:
+		# 		red_d = reducer.fit_transform(d)
+		# else:
 		if C.kept_out:
 			data = np.delete(data, kept_out_idcs, axis=0)
-		rng = np.random.default_rng()
 		rng.shuffle(data, axis=0)
 		if ds_trunk_idx < data.shape[0]:
 			data = data[:ds_trunk_idx]
-
+		
 		reducer.fit(data)
-
-		del data_x; del data
 		# TODO: replace show_steps arguments with argument selection
 		red_data = reducer.transform(z_s, show_steps='all')
 
 		# the last element of red(uced)_data is the lower level representation.
+		if quantise_bits:
+			assert isinstance(quantise_bits, int)
+			quantise_lvls = 2**quantise_bits - 1
+			q_data = red_data[-1].copy()
+			q_data_min = q_data.min(axis=0, keepdims=True)
+			q_data -= q_data_min
+			q_data[q_data == 0.0] = 0.0000000000001
+			bits_ratio = quantise_lvls/q_data.max(axis=0, keepdims=True)
+			q_data *= bits_ratio
+			q_data = np.rint(q_data)
+			# inverse
+			q_data = q_data / bits_ratio + q_data_min
+			print(f"simulated quantisation with bits: {quantise_lvls+1}")
+			red_data[-1] = q_data
+
 		rec_data = reducer.inverse_transform(red_data[-1], show_steps='all',
-		                                  resample=C.training.resample)
+		                                  resample=C.compress.resample_z)
+		del data_x; del data
 		if 'umap' in C.steps:
 			step_vector = [x_s, z_s] + red_data + rec_data[1:]
 		else:
 			step_vector = [x_s, z_s] + [reducer.models['pca'].components_] \
 			               + red_data + rec_data
-		if C.archive_step:
-			np.savez(cache_fn, **dict(zip(step_vec_keys, step_vec_keys)))
+		if C.compress.archive_step:
+			np.savez(cache_fn, **dict(zip(step_vec_keys, step_vector)))
 	else:
 		raise RuntimeError
 
@@ -292,13 +330,16 @@ def plot_reduced_dataset(pca, z_s, att, k, att_ind, filename):
 
 
 if __name__ == '__main__':
-	C = ConfWrap(fn='config/rere_ffhq128_c.yml')
-	# here only for compatibility:
-	C.data = ['Z' , 'X']
 
-	C.archive_data = True
-	C.use_data_archive = True
-	C.archive_step = True
-	C.use_step_archive = True
+	conf_name = 'config/ffhq128_c.yml'
+	parser = ArgumentParser(description='RealNVP training on various datasets.')
+	parser.add_argument('--config', '-c', default=conf_name)
+	parser.parse_args()
+
+	C = ConfWrap(fn=parser.config)
+	# C.archive_data = True
+	# C.archive_step = True
+	# C.use_data_archive = False # True
+	# C.use_step_archive = False
 	main(C)
 

@@ -13,7 +13,7 @@ training:
     dataset: ffhq
     in_channels: 3
     img_size: 128
-    batch_size: 8
+    batch_size: 128
     n_samples: 16
     n_workers: 8
     learning_rate: 0.0001
@@ -33,5 +33,31 @@ sampling:
 similarity:
     data: ['MEAN', 'STD', 'X', 'Z']
     use_data_archive: True
-    dataset: ffhq
-track_y: False # should stay F.
+    dataset: celeba
+    track_y: False # will stay F.
+compress:
+    data: ['X', 'Z']
+    dataset: celeba # celeba
+    dataset_ratios: [.1, .4, 0.6, 0.8, 1.]
+    steps: [[net, pca]] # , [net, pca, umap]]
+    no_model: False
+    quantise: False # 8 to 5 bits or False
+    # Use/create Archives
+    use_data_archive : True # True
+    use_step_archive : False
+    archive_data : False
+    archive_step : True
+    ## PCA
+    pca_n_pcs: "(2, 17)" # "(2, 15)"
+    # n_pcs_sc: 20
+    pca_whiten: True
+    # n_pcs_cluster: "[i for i in range(0, 39, 5)]" # not used
+    ## UMAP
+    umap_nn: 20
+    umap_min_dist: 0.0
+    umap_n_comps: "(2, 19, 2)"
+    # Synthesizer parameters
+    resample_z: True
+    img_size: 128
+    in_channels: 3
+    batch_size: 128
