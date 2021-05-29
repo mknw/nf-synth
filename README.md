@@ -47,10 +47,8 @@ A more detailed description will be soon pushed to `main`.
 
 ### Glow
 
-![Sample](sample.png)
+Trainable on CelebA-128 and FFHQ-128.
+Additionally, the model contains a learned prior at the end of each flow-step. 
 
-Trained model on FFHQ128 and celebA128 datasets. 
-The model contains a learned prior, possibility to train additive and affine coupling layer variants,
-exponential function instead of sigmoid. 
-
+Glow samples, FFHQ dataset:
 ![Samples on training FFHQ-128](n-16_sample_t-0.50.png)
