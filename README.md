@@ -2,15 +2,14 @@
 
 *The present code is in prototype stage.*
 
-This repository contains the code for the MSc Thesis: *Normalising Flows: Seeing Latent Space*.
+This repository contains the code for the MSc Thesis: *"Normalising Flows: Seeing Latent Space"*.
 
+It is intended to compress images with continuous, Normalising Flows (NF) generative models.
 
-It is intended to compress image archives a continuous NF generative model.
-
-The architectures are: 
+The NF architectures are: 
 
 	- Glow [link to paper](https://arxiv.org/abs/1807.03039)
-	- Real-NVP (*coming soon*, [link to paper](https://arxiv.org/abs/1605.08803))
+	- Real-NVP (*deprecated*, [link to paper](https://arxiv.org/abs/1605.08803))
 
 ## Usage 
 
@@ -32,9 +31,9 @@ Similarity analysis:
 
 Abstraction over step based compression module comprising:
 
-- Normalising Flow Architecture (Glow or Real-NVP)
+- Normalising Flow Architecture (Glow or ~Real NVP~)
 - Principal Component Analysis (PCA)
-- Uniform Manifold Approximation Projection (UMAP)
+- Uniform Manifold Approximation Projection (UMAP, optional)
 
 `Synthesizer` is a scikit compliant transformer class implementing the methods: `fit`, `transform`,
 `inverse_transform`, `fit_transform`.
