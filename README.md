@@ -4,7 +4,7 @@
 
 This repository contains the code for the MSc Thesis: *"Normalising Flows: Seeing Latent Space"*.
 
-It is intended to compress images with continuous, Normalising Flows (NF) generative models.
+It is intended to compress images with continuous, Normalising Flow (NF) generative models.
 
 The NF architectures are: 
 
