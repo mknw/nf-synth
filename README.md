@@ -10,8 +10,8 @@ It is intended to compress images with continuous, Normalising Flow (NF) generat
 
 The NF architectures are: 
 
-- Glow [link to paper](https://arxiv.org/abs/1807.03039)
-- Real-NVP (*deprecated*, [link to paper](https://arxiv.org/abs/1605.08803))
+- Glow ([link to paper](https://arxiv.org/abs/1807.03039))
+- ~~Real-NVP~~ ([link to paper](https://arxiv.org/abs/1605.08803))
 
 ## Usage 
 
