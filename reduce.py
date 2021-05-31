@@ -43,6 +43,7 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 	archive_filename = f'{model_root_fp}/{data_fn}'
 	# C.data_fn = data_fn
 	if C.compress.use_data_archive:
+		import ipdb; ipdb.set_trace() # should not happen
 		potential_archive_fn = glob(f'{model_root_fp}/*{data_fn}')
 		if len(potential_archive_fn)==1:
 			archive_filename = potential_archive_fn[0]
@@ -57,7 +58,7 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 		# be computed once. Therefore, we do it now
 		# and save it to disk.
 		if C.compress.dataset == 'celeba':
-			loader = load_celeba(128, C.training.img_size, test=True)
+			loader = load_celeba(128, C.training.img_size, test=True, shuffle=False)
 		elif C.compress.dataset == 'ffhq':
 			loader = load_ffhq(C.training.batch_size,
 			                  C.training.img_size, test=True, shuffle=False)
@@ -90,7 +91,7 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 	# re-upsampling/reconstruction visualization.
 	reup_umap_npc = [i for i in range(*eval(C.compress.umap_n_comps))]
 	reup_pca_npc = [int((i**3.5)) for i in range(*eval(C.compress.pca_n_pcs))]
-	reup_pca_npc += [data_z.shape[0]-10]
+	reup_pca_npc += [data_z.shape[0]-16]
 	steps_l = C.compress.steps
 	for stps in steps_l: 
 		reup_umap_l = (['empty'] if 'umap' not in stps else reup_umap_npc)
@@ -178,7 +179,7 @@ def compute_reduction_reupsampling(C, attributes, data=None, data_x=None, reduce
 	and post (reconstructed) dimensionality reduction.'''
 	rng = np.random.default_rng(seed=seed)
 	if attributes.ds == 'celeba':
-		# Cat's: blond, brown air, smiling, wearing hat.
+		# Categ's: blond, brown air, smiling, wearing hat.
 		att_ind = [5, 11, 31, 35] + 1 # XXX !!! XXX
 		att_str = '-'.join(map(str, att_ind)) # [str(a) for a in att_ind])
 	elif attributes.ds == 'ffhq':
@@ -332,11 +333,11 @@ def plot_reduced_dataset(pca, z_s, att, k, att_ind, filename):
 if __name__ == '__main__':
 
 	conf_name = 'config/ffhq128_c.yml'
-	parser = ArgumentParser(description='RealNVP training on various datasets.')
-	parser.add_argument('--config', '-c', default=conf_name)
-	parser.parse_args()
+	parser = ArgumentParser(description='Compression visualisations of NF-synth.')
+	parser.add_argument('--config', '-c', default=conf_name, dest='config')
+	ap = parser.parse_args()
 
-	C = ConfWrap(fn=parser.config)
+	C = ConfWrap(fn=ap.config)
 	# C.archive_data = True
 	# C.archive_step = True
 	# C.use_data_archive = False # True

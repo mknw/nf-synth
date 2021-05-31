@@ -23,6 +23,7 @@ from config.config import ConfWrap
 from shutil import rmtree
 from torch.distributions.gamma import Gamma
 from glob import glob
+from argparse import ArgumentParser
 
 def main(C):
 
@@ -43,7 +44,7 @@ def main(C):
 		# C.model_dir = find_last_model_relpath(C.training.root_dir) # /model_{str(i + 1).zfill(6)}.pt'
 		if os.path.isfile(f'{C.training.root_dir}/best_model'): 
 			with open(f'{C.training.root_dir}/best_model', 'r') as bm:
-				C.model_dir = bm.read()
+				C.model_dir = bm.readline().strip()
 		print(f'Resuming from checkpoint at {C.model_dir}')
 		checkpoint = torch.load(C.model_dir+'/model.pth.tar')
 		net.load_state_dict(checkpoint['net'])
@@ -171,15 +172,17 @@ def train(config, net, device, optimizer, start_epoch, z_sample=None):
 				torch.save({'net': net.state_dict(), 'loss': loss_meter.avg,
 				            'epoch': i},  f'{model_dir}/model.pth.tar')
 				torch.save(optimizer.state_dict(), f'{model_dir}/optim.pt')
+				print(f"Ep.{i}: Model with loss: {loss_meter.avg} saved to {model_dir}/model.pth.tar")
 				if loss_meter.avg < best_loss:
-					with open(f'{config.root_dir}/best_model', 'w') as bm:
-						bm.write(model_dir)
 					best_loss = loss_meter.avg
-					print(f"Ep.{i}: Model with loss: {loss_meter.avg} saved to {model_dir}/model.pth.tar")
+					with open(f'{config.root_dir}/best_model', 'w') as bm:
+						bm.writelines([f'{model_dir}\n',
+						               f'{i}\n',
+						               f'{best_loss}\n'])
 					# only remove previous checkpoints if loss improves.
 					if len(tenK_ep_) > 5:
 						for prev_epoch in tenK_ep_[:-4]:
-							rmtree(prev_epoch) # but keep backup model(s)
+							rmtree(prev_epoch) #, but keep N backup model(s)
 			# Sampling.
 			if config.z_dist == 'normal':
 				z_sample = find_or_make_z(config.z_path, reuse=True)
@@ -367,12 +370,13 @@ if __name__ == '__main__':
 	# C = ConfWrap(fn='config/ffhq256lu_c.yml')
 	# C = ConfWrap(fn='config/glow_celeba_aff.yml')
 	# C = ConfWrap(fn='config/ffhq64_gamma_c.yml')
+	# import ipdb; ipdb.set_trace()
 	conf_name = 'config/celeba128_c.yml'
-	parser = ArgumentParser(description='RealNVP training on various datasets.')
-	parser.add_argument('--config', '-c', default=conf_name)
-	parser.parse_args()
+	parser = ArgumentParser(description='Glow training on different datasets.')
+	parser.add_argument('--config', '-c', default=conf_name, dest='config')
+	ap = parser.parse_args()
 
-	C = ConfWrap(fn=parser.config)
+	C = ConfWrap(fn=ap.config)
 
 	C.training.sample_dir = C.training.root_dir + '/samples'
 	main(C)

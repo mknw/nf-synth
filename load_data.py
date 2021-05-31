@@ -7,7 +7,6 @@ import torch
 import torchvision.transforms.functional as TF
 import torch.backends.cudnn as cudnn
 
-import warnings
 from skimage import io
 from PIL import Image, ImageDraw
 import pandas as pd
@@ -100,10 +99,10 @@ def sample_from_directory(path, batch, image_size, test=False, shuffle=False,
 			loader = iter(loader)
 			yield next(loader)
 
-def load_ffhq(batch=256, image_size=128, test=False, shuffle=False,
+def load_ffhq(batch=256, image_size=128, test=False, shuffle=None,
 	 path='data/FFHQ/thumbnails128x128', norm=None, log_path=None, seed=2147483647):
 	''' Single loop iterator, mainly used for stats retrieval.'''
-	warnings.warn('This function should only be used for similarity'
+	warn('This function should only be used for similarity'
 	              'analysis. For training a network, see `sample_from_directory`.')
 	# this takes care of all seeds througout torch processes.
 	# seed = 2147483647 is used for FFHQ split set replicability.
@@ -121,7 +120,9 @@ def load_ffhq(batch=256, image_size=128, test=False, shuffle=False,
 			transforms.ToTensor(),
 			transforms.Normalize(norm[0], norm[1])
 		])
-		shuffle=True
+		if shuffle is None:
+			shuffle = True
+			warn(f"shuffle set to: `{shuffle}' for train set")
 	else:
 		# test split
 		transform = transforms.Compose([
@@ -140,11 +141,11 @@ def load_ffhq(batch=256, image_size=128, test=False, shuffle=False,
 	return loader
 
 
-def load_celeba(batch=32, image_size=64, test=False, shuffle=False, norm=None,
+def load_celeba(batch=32, image_size=64, test=False, shuffle=None, norm=None,
 	            seed=2147483647):
 	# raise NotImplementedError("See sample_celeba")
 	''' Single loop iterator, mainly used for stats retrieval.'''
-	warnings.warn('This function should only be used for similarity'
+	warn('This function should only be used for similarity'
 	              'analysis. For training a network, see `sample_celeba`.')
 	torch.manual_seed(seed)
 	if norm is None:
@@ -158,7 +159,9 @@ def load_celeba(batch=32, image_size=64, test=False, shuffle=False, norm=None,
 			transforms.ToTensor(),
 			transforms.Normalize(norm[0], norm[1])
 		])
-		shuffle=True
+		if shuffle is None:
+			shuffle=True
+			warn(f"shuffle set to {shuffle} for train set.")
 	else:
 		split = 'test'
 		transform = transforms.Compose([

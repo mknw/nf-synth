@@ -43,7 +43,7 @@ compress:
     no_model: False
     quantise: False # 8 to 5 bits or False
     # Use/create Archives
-    use_data_archive : True # True
+    use_data_archive : False # True
     use_step_archive : False
     archive_data : False
     archive_step : True

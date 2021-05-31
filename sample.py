@@ -175,6 +175,12 @@ def find_last_epoch_model(fp):
 	return fp + '/' + last_epoch
 
 if __name__ == '__main__':
-	C = ConfWrap(fn='config/ffhq128_c.yml')
+	conf_name = 'config/ffhq128_c.yml'
+
+	parser = ArgumentParser(description='Utility for sampling from Gaussian latent space Z.')
+	parser.add_argument('--config', '-c', default=conf_name, dest='config')
+	ap = parser.parse_args()
+
+	C = ConfWrap(fn=ap.config)
 	C.resume = True
 	main(C)

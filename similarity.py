@@ -1776,11 +1776,11 @@ def mark_version(version_str, fp_vmarker, finish=False, sep='-'):
 if __name__ == '__main__':
 
 	conf_name = 'config/ffhq128_c.yml'
-	parser = ArgumentParser(description='RealNVP training on various datasets.')
-	parser.add_argument('--config', '-c', default=conf_name)
-	parser.parse_args()
+	parser = ArgumentParser(description='Similarity Analysis of NF latent space.')
+	parser.add_argument('--config', '-c', default=conf_name, dest='config')
+	ap = parser.parse_args()
 
-	C = ConfWrap(fn=parser.config)
+	C = ConfWrap(fn=ap.config)
 	# C = ConfWrap(fn='config/ffhq128_c.yml')
 	# C = ConfWrap(fn='config/glow_celeba.yml')
 	# C.version = 'V-1.1' # remove?
