@@ -17,6 +17,7 @@ import argparse
 import os
 import shutil
 from random import randrange
+from numpy.linalg import svd
 
 class  Synthesizer(object):
 	def __init__(self, C, steps = ['net', 'pca', 'umap'],
@@ -50,6 +51,9 @@ class  Synthesizer(object):
 			if step == 'pca':
 				self.models[step] = PCA(n_components=C.pca_n_pcs, whiten = C.pca_whiten,
 						                  random_state=42, svd_solver=svd_solver)
+			if step == 'svd':
+				self.models[step] = batch_SVD(n_components=C.pca_n_pcs, whiten=C.pca_whiten,
+						img_size = C.img_size, img_channels = C.in_channels)
 			if step == 'umap':
 				self.models[step] = UMAP(n_neighbors = C.umap_nn, min_dist = C.umap_min_dist,
 			                    n_components = C.umap_n_comps, random_state=42)
@@ -58,6 +62,7 @@ class  Synthesizer(object):
 			self.channels = C.in_channels
 			self.img_size = C.img_size
 			self.batch = C.batch_size
+
 
 	def fit(self, data, skip_l=['net']):
 		''' Main fit method .
@@ -75,7 +80,7 @@ class  Synthesizer(object):
 				else:
 					self.models[step].fit(data)
 		del data
-		return
+		return self
 
 	def transform(self, data, show_steps='all', skip_l=['net']):
 		''' Main transform method.
@@ -115,7 +120,6 @@ class  Synthesizer(object):
 					data = self.net_generate(data, resample=resample)
 				else:
 					data = self.models[step].inverse_transform(data)
-
 				if step in selected_steps:
 					out.append(data)
 					if len(selected_steps) == 1:
@@ -221,3 +225,153 @@ class  Synthesizer(object):
 			                          ).reshape(input_data.shape[0], -1)
 		return data.cpu().detach().numpy()
 
+
+class batch_SVD:
+	'''
+	Perform dim. red. for individual images. 
+	'''
+	
+	def __init__(self, n_components, whiten, img_size, img_channels,
+		          random_state=123129387):
+		self.n_components = n_components
+		self.whiten = whiten
+		self.center = True
+		# TODO: change param names to match.
+		self.im_s = img_size
+		self.im_ch = img_channels
+	
+	def fit(self, X, y=None):
+
+		X = self._preproc_img(X)
+		U, S, Vt = self._fit_full(X, self.n_components)
+		# U = U[..., :self.n_components]
+		return self
+
+	def fit_transform(self, X, y=None):
+		
+		# X = self._preproc_img(X)
+		U, S, Vt = self._fit_full(X)
+
+		if self.whiten:
+			# changed this for stacked pca
+			U *= np.sqrt(self.im_s - 1)
+		else:
+			U *= S[:, :self.n_components_, np.newaxis] # need to chance
+		return U
+
+	def _preproc_img(self, X):
+		
+		if X.shape[0] == 1:
+			raise ValueError("Only batch of images accepted")
+		
+		n_imgs= X.shape[0]
+		if len(X.shape) == 2 or len(X.shape) == 4:
+			X = X.reshape(n_imgs*self.im_ch, self.im_s, self.im_s)
+
+		if not 0 < self.n_components <= min(X.shape[-2:]):
+			raise ValueError
+		
+		return X
+
+	def _fit_full(self, X):
+		X = self._preproc_img(X)
+
+		if self.center:
+			mean_ = X.mean(-2, keepdims=True)
+			X -= mean_
+
+		n_components = self.n_components
+
+		# numpy.linalg.svd
+		U, S, Vt = svd(X, full_matrices=False)
+		# flip eigenvectors' sign to enforce deterministic output
+		# TODO: fix n_dimensional svd_flip_
+		# U, Vt = batch_svd_flip_(U, Vt)
+
+		self.components_ = Vt[:, :n_components, :]
+		U = U[..., :n_components]
+
+		explained_variance_ = np.square(S[:, :n_components]) / (self.im_s - 1)
+		total_var = explained_variance_.sum(axis=1)
+		explained_variance_ratio_ = explained_variance_ / total_var[:, np.newaxis]
+		# singular_values_ = S.copy()
+
+		# noise variance for each image.
+		self.noise_variance_ = (np.square(S[:, n_components:]) / (self.im_s - 1)).mean(axis=-1)
+		self.explained_variance_ = explained_variance_
+		self.mean_ = mean_
+		return U, S, Vt
+
+
+	def _postproc(self, X):
+		return X.reshape(int(X.shape[0]/self.im_ch), self.im_ch, self.im_s, self.im_s)
+
+	def transform(self, X):
+		X = self._preproc_imgs(X)
+		X -= self.mean_
+		
+		X_t = X @ self.components_.transpose(axes=(0, 2, 1))
+		if self.whiten:
+			X_t /= np.sqrt(self.explained_variance_)
+		return X_t
+
+	def inverse_transform(self, X):
+		if self.whiten:
+			scaled_components = self.explained_variance_[:, :, np.newaxis] * \
+		            self.components_
+			X_t = X @ scaled_components
+			X_t += self.mean_
+			return self._postproc(X_t)
+		else:
+			X_t = X @ self.components_ + self.mean_
+		return X_t
+
+
+def batch_svd_flip_(u, v, u_based_decision=True):
+	""" From: `scikit.utils.extmath.svd_flip`; but for `len(u,v.shape)` > 2.
+	Sign correction to ensure deterministic output from SVD.
+	Adjusts the columns of u and the rows of v such that the loadings in the
+	columns in u that are largest in absolute value are always positive.
+
+	Parameters
+	----------
+	u : ndarray
+	    u and v are the output of `linalg.svd` or
+	    :func:`~sklearn.utils.extmath.randomized_svd`, with matching inner
+	    dimensions so one can compute `np.dot(u * s, v)`.
+		 
+	v : ndarray
+	    u and v are the output of `linalg.svd` or
+	    :func:`~sklearn.utils.extmath.randomized_svd`, with matching inner
+	    dimensions so one can compute `np.dot(u * s, v)`.
+	    The input v should really be called vt to be consistent with scipy's
+	    ouput.
+
+	u_based_decision : bool, default=True
+	    If True, use the columns of u as the basis for sign flipping.
+	    Otherwise, use the rows of v. The choice of which variable to base the
+	    decision on is generally algorithm dependent.
+	
+
+	Returns
+	-------
+	u_adjusted, v_adjusted : arrays with the same dimensions as the input.
+	
+	"""
+	import ipdb; ipdb.set_trace()
+	# u = u.reshape(u.shape[0] * u.shape[1], u.shape[2])
+
+	if u_based_decision:
+		# columns of u, rows of v
+		max_abs_cols = np.argmax(np.abs(u), axis=1)
+		signs = np.sign(u[max_abs_cols[:,:,np.newaxis], range(u.shape[1])])
+		u *= signs
+		v *= signs[:, np.newaxis]
+	else:
+		raise NotImplementedError
+		# rows of v, columns of u
+		max_abs_rows = np.argmax(np.abs(v), axis=1)
+		signs = np.sign(v[:, range(v.shape[0]), max_abs_rows])
+		u *= signs
+		v *= signs[:, np.newaxis]
+	return u, v
