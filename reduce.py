@@ -18,13 +18,19 @@ from load_data import load_celeba, load_ffhq
 from glob import glob
 from argparse import ArgumentParser
 
+import datetime as dt
 
 def main(C, epoch=4340000, save=True):
 
 	p_value_counts = dict()
 	model_meta_stuff = select_model(C.training.root_dir, select_epoch='auto', figures=7)
 
-	analyse_synthesizer(C, model_meta_stuff)
+	config = C
+	for tile_rgb in ['h']: # False, 'h', 'v']: # , 'h', 'v']:
+		for q in [8, 7, 6, 5]:
+			config.compress.quantise = q
+			config.compress.tile_RGB = tile_rgb
+			analyse_synthesizer(config, model_meta_stuff)
 
 
 def analyse_synthesizer(C, model_meta_stuff = None):
@@ -43,23 +49,22 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 	archive_filename = f'{model_root_fp}/{data_fn}'
 	# C.data_fn = data_fn
 	if C.compress.use_data_archive:
-		import ipdb; ipdb.set_trace() # should not happen
-		potential_archive_fn = glob(f'{model_root_fp}/*{data_fn}')
-		if len(potential_archive_fn)==1:
-			archive_filename = potential_archive_fn[0]
-			print(f"matched archive: {archive_filename}")
-
 		if os.path.isfile(archive_filename):
-			print(f'Loading saved arrays: `{s_str}`', end='')
-			print(f' and {data_fn}`')
 			dataset = np.load(archive_filename)
+			print(f'Loading saved arrays: `{s_str}`', end='')
+			print(f' from {data_fn}`')
+		else:
+			potential_archive_fn = glob(f'{model_root_fp}/*{data_fn}')
+			if len(potential_archive_fn)==1:
+				warn(f"Did not find exact match for {archive_filename}."
+			        f"Loading {potential_archive_fn[0]} instead.")
+				dataset = np.load(potential_archive_fn[0])
 	else:
-		# Z's computation is expensive and should only
-		# be computed once. Therefore, we do it now
-		# and save it to disk.
-		if C.compress.dataset == 'celeba':
+		# Minimize the need to compute X and Z for the full test set;
+		# Create archives instead.
+		if C.compress.dataset.lower() == 'celeba':
 			loader = load_celeba(128, C.training.img_size, test=True, shuffle=False)
-		elif C.compress.dataset == 'ffhq':
+		elif C.compress.dataset.lower() == 'ffhq':
 			loader = load_ffhq(C.training.batch_size,
 			                  C.training.img_size, test=True, shuffle=False)
 		dataset = track_z(net, device, C.training.img_size, loader, stats=C.compress.data)
@@ -72,12 +77,20 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 	data_z = dataset['Z'].reshape(dataset['Z'].shape[0], -1)
 	data_x = dataset['X'].reshape(dataset['X'].shape[0], -1)
 	if C.compress.dataset == 'celeba':
-		attributes = Attributes().fetch()
+		attributes = Attributes(dataset='celeba')
 	elif C.compress.dataset == 'ffhq':
+		# mockup 1 column of ones.
 		attributes = Attributes(dataset='ffhq')
 
 	## make cache directory for all analyses (PCA red. + reupsampling).
-	root_d = f'{C.training.root_dir}/compress_{C.compress.dataset}'
+	if C.compress.rans:
+		root_d = f'{C.training.root_dir}/rANS_compress_{C.compress.dataset}'
+	else:
+		root_d = f'{C.training.root_dir}/compress_{C.compress.dataset}'
+	if 'svd' in C.compress.steps[0]:
+		root_d += '_svd'
+	if C.compress.tile_RGB:
+		root_d += f'/rgb_{C.compress.tile_RGB}'
 	os.makedirs(root_d, exist_ok=True)
 	# C.cache_bn = make_basename(root_d, cache=True)
 
@@ -87,21 +100,33 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 	#                       net=net, device=device)
 	# C.basename = make_basename(root_d, subdir='pca', pca_pcs=C.pca.n_pcs_sc)
 	# pca_reduction_on_attributes(C, reducer, data_z, attributes)
-
-	# re-upsampling/reconstruction visualization.
-	reup_umap_npc = [i for i in range(*eval(C.compress.umap_n_comps))]
-	reup_pca_npc = [int((i**3.5)) for i in range(*eval(C.compress.pca_n_pcs))]
-	reup_pca_npc += [data_z.shape[0]-16]
+	kept_out_l = [True, False]
 	steps_l = C.compress.steps
+	dataset_ratio_l = C.compress.dataset_ratios
+	quantise_fun = quantisation_simulator(quantise_bits=C.compress.quantise,
+	                                      rans=C.compress.rans)
+	# re-upsampling/reconstruction visualization.
 	for stps in steps_l: 
-		reup_umap_l = (['empty'] if 'umap' not in stps else reup_umap_npc)
+		# select dim. red. parameters
+		if 'umap' in stps:
+			reup_umap_npc = [i for i in range(*eval(C.compress.umap_n_comps))]
+		else:
+			reup_umap_l = ['empty']
+		if 'pca' in stps:
+			pca_npc_l = [int(i**3.5) for i in range(2, 17)]
+			pca_npc_l += [data_z.shape[0]-16]
+		elif 'svd' in stps:
+			# pca_npc_l = [int(C.compress.img_size / r) for r in range(1, 11)]
+			pca_npc_l = [int(i**1.6) for i in range(5, 19)]
+			kept_out_l = [False]
+			dataset_ratio_l = [1.] # HaCk
 		for umap_pcs in reup_umap_l:
 			# if not C.compress.no_model:
-			for pca_pcs in reup_pca_npc:
-				for ds in C.compress.dataset_ratios:
-					for kept_out in [True, False]:
-						if (kept_out and pca_pcs >= int(ds * data_z.shape[0])-16) \
-						   or (not kept_out and pca_pcs >= int(ds * data_z.shape[0])):
+			for pca_pcs in pca_npc_l:
+				for ds in dataset_ratio_l:
+					for kept_out in kept_out_l:
+						if (kept_out and pca_pcs > int(ds * data_z.shape[0])-16) \
+						   or (not kept_out and pca_pcs > int(ds * data_z.shape[0])):
 							continue
 						# in function use
 						C.steps = stps # !
@@ -111,46 +136,62 @@ def analyse_synthesizer(C, model_meta_stuff = None):
 						C.compress.umap_n_comps = umap_pcs
 						C.compress.pca_n_pcs = pca_pcs
 						# make folders
-						C.basename = make_basename(root_d, subdir=ds, pca_pcs=pca_pcs,
-						                           umap_pcs=umap_pcs)
-						C.cache_bn = make_basename(root_d, subdir=ds, pca_pcs=pca_pcs,
-						                           umap_pcs=umap_pcs, quantise_bits=C.compress.quantise, cache=True)
-						print(f'Analysing synth with \
-						        PCA nps:{pca_pcs}, UMAP dims: {umap_pcs}, \
-						        ko:{C.kept_out}, ratio:{ds}')
+						C.basename = make_basename(root_d, config=C)
+						# C.cache_bn = make_basename(root_d, config=C, cache=True)
+						print('Analysing synth with\n'
+						      f'PCA nps:{pca_pcs}, UMAP dims: {umap_pcs}, '
+						      f'ko:{C.kept_out}, ratio:{ds}')
 						if not C.compress.no_model:
 							reducer = Synthesizer(C.compress, steps=stps, net=net,
-						                           device=device)
-							compute_reduction_reupsampling(C, attributes, data_z,
-							                        data_x, reducer, quantise_bits=C.compress.quantise)
+						                           device=device, quantise_fun=quantise_fun)
+							compute_reduction_reupsampling(C, attributes, data_z.copy(),
+							                       data_x.copy(), reducer,
+							                       quantise_bits=C.compress.quantise, seed=69)
 						else:
-							compute_reduction_reupsampling(C, attributes, data_z,
-							                               data_x, quantise_bits=C.compress.quantise)
+							compute_reduction_reupsampling(C, attributes, data_z.copy(),
+							                       data_x.copy(), quantise_bits=C.compress.quantise)
 
 
 def make_basename(root, mark_time=False, subdir=None, pca_pcs=None, umap_pcs=None, cache=False,
-		quantise_bits=False):
+		quantise_bits=None, add_log=True, config=None):
+	# extract arguments from `config` dictionary.
+	if quantise_bits is None:
+		quantise_bits = config.compress.quantise
+	if pca_pcs is None:
+		pca_pcs = config.compress.pca_n_pcs
+	if umap_pcs is None:
+		umap_pcs = config.compress.umap_n_comps
+	if subdir is None:
+		subdir = C.ds_ratio
+
+	# chain string
 	time = ''
 	basename = root 
 	# two subdirectories
+	if quantise_bits:
+		basename = f'{root}/q{quantise_bits}'
+	else:
+		basename = f'{root}/no-q'
 	if subdir:
 		# prefix (used for ratio in reupsam, otherwise analysis type ('pca'))
-		if isinstance(subdir, (int, float)):
+		if isinstance(subdir, float):
 			# basename += f'/rat{subdir}' # XXX !!! XXX
 			if quantise_bits:
-				basename += f'/q{quantise_bits}-rat{subdir}' # XXX !!! XXX
+				basename += f'-rat{subdir}' # XXX !!! XXX
 			else:
-				basename += f'/noq-rat{subdir}' # XXX !!! XXX
+				basename += f'/rat{subdir}' # XXX !!! XXX
 		else:
 			basename += f'/{subdir}'
 	if cache:
 		basename += '/cache'
 	os.makedirs(basename, exist_ok=True)
 	# filename prefix
-	if mark_time: 
-		import datetime as dt
+	if mark_time or add_log: 
 		t = str(dt.datetime.now()).split(sep='.')[0].replace('2021-', '').replace(' ', '_')
-		basename += t
+		if mark_time:
+			basename += t
+		if add_log:
+			C.dump(f'{basename}/log-{t}.yaml')
 	basename += f'/syn'
 	if umap_pcs and (umap_pcs != 'empty'):
 			basename += f'_uc{umap_pcs}'
@@ -178,31 +219,34 @@ def compute_reduction_reupsampling(C, attributes, data=None, data_x=None, reduce
 	''' Save x's and z's, visualized pre (original) 
 	and post (reconstructed) dimensionality reduction.'''
 	rng = np.random.default_rng(seed=seed)
-	if attributes.ds == 'celeba':
+	if attributes.dataset == 'celeba': # stitch filename together (till 194)
 		# Categ's: blond, brown air, smiling, wearing hat.
-		att_ind = [5, 11, 31, 35] + 1 # XXX !!! XXX
+		att_ind = [5, 11, 31, 35] # XXX !!! XXX
+		att_ind = [i + 1 for i in att_ind]
+		# att_ind = [1, 3, 25, 29]
+		att_ind = [4, 12, 19, 33]
 		att_str = '-'.join(map(str, att_ind)) # [str(a) for a in att_ind])
-	elif attributes.ds == 'ffhq':
+	elif attributes.dataset== 'ffhq':
 		att_ind = 0
 		att_str = 'test-split'
 	ko = '_ko' if C.kept_out else ''
 	ds_trunk_idx = int(data.shape[0] * C.ds_ratio)
-	ds_rat = f'_{ds_trunk_idx}' if C.ds_ratio != 1 else ''
+	ds_rat = f'_{ds_trunk_idx}' if not isinstance(C.ds_ratio, float) else ''
 	filename = f'{C.basename}_{att_str}{ko}{ds_rat}.png'
-	cache_fn = f'{C.cache_bn}_{att_str}{ko}{ds_rat}.npz'
+	# cache_fn = f'{C.cache_bn}_{att_str}{ko}{ds_rat}.npz'
 
 	# middle two keys change depending on whether UMAP is used.
 	step_vec_keys = ['X', 'Z', 'PC/eigenZ', 'PC/UMAP', 'rec_Z', 'rec_X']
 
+	# def resample_archive(C, attributes, data, data_x, reducer, quantise_bits):
 	if C.compress.dataset == 'celeba':
 		kept_out_df, kept_out_idcs = attributes.pick_last_n_per_attribute(att_ind, n=4)
 		att_names = list(kept_out_df.columns)
 	elif C.compress.dataset == 'ffhq':
-		# kept_out_idcs = range(16)
 		kept_out_idcs = rng.choice(5000, 16, False)
 		att_names = [f'row {n}' for n in range(1, 5)]
 
-	if C.compress.use_step_archive and os.path.isfile(cache_fn):
+	if C.compress.use_step_archive and False: #  and os.path.isfile(cache_fn):
 		step_vector = list()
 		with np.load(cache_fn) as data:
 			for k in step_vec_keys:
@@ -212,122 +256,118 @@ def compute_reduction_reupsampling(C, attributes, data=None, data_x=None, reduce
 		# split dataset
 		z_s = data[kept_out_idcs].copy()
 		x_s = data_x[kept_out_idcs].copy()
-		# TODO: add individual image transform for
-		# stand-along compression
-		# if mono: 
-		# 	for d in data:
-		# 		red_d = reducer.fit_transform(d)
-		# else:
-		if C.kept_out:
-			data = np.delete(data, kept_out_idcs, axis=0)
-		rng.shuffle(data, axis=0)
-		if ds_trunk_idx < data.shape[0]:
-			data = data[:ds_trunk_idx]
+
+		if 'svd' in C.steps:
+			red_data = reducer.fit_transform(z_s)
+		else:
+			if C.kept_out:
+				data = np.delete(data, kept_out_idcs, axis=0)
+			# rng.shuffle(data, axis=0)
+			if ds_trunk_idx < data.shape[0]:
+				data = data[:ds_trunk_idx]
 		
-		reducer.fit(data)
-		# TODO: replace show_steps arguments with argument selection
-		red_data = reducer.transform(z_s, show_steps='all')
+			reducer.fit(data)
+			# TODO: replace show_steps arguments with argument selection
+			red_data = reducer.transform(z_s, show_steps='all')
 
 		# the last element of red(uced)_data is the lower level representation.
 		if quantise_bits:
-			assert isinstance(quantise_bits, int)
-			quantise_lvls = 2**quantise_bits - 1
-			q_data = red_data[-1].copy()
-			q_data_min = q_data.min(axis=0, keepdims=True)
-			q_data -= q_data_min
-			q_data[q_data == 0.0] = 0.0000000000001
-			bits_ratio = quantise_lvls/q_data.max(axis=0, keepdims=True)
-			q_data *= bits_ratio
-			q_data = np.rint(q_data)
-			# inverse
-			q_data = q_data / bits_ratio + q_data_min
-			print(f"simulated quantisation with bits: {quantise_lvls+1}")
-			red_data[-1] = q_data
-
-		rec_data = reducer.inverse_transform(red_data[-1], show_steps='all',
+			if 'svd' not in C.steps:
+				red_data[-1] = sim_quantisation(red_data[-1])
+			rec_data = reducer.inverse_transform(red_data[-1], show_steps='all',
+				                               resample=C.compress.resample_z)
+		else:
+			rec_data = reducer.inverse_transform(red_data[-1], show_steps='all',
 		                                  resample=C.compress.resample_z)
+
 		del data_x; del data
 		if 'umap' in C.steps:
 			step_vector = [x_s, z_s] + red_data + rec_data[1:]
-		else:
+			outer_grid = (3, 2)
+		elif 'pca' in C.steps:
 			step_vector = [x_s, z_s] + [reducer.models['pca'].components_] \
 			               + red_data + rec_data
+			outer_grid = (3, 2)
+		elif 'svd' in C.steps:
+			step_vector = [x_s, z_s] + rec_data
+			outer_grid = (2, 2)
 		if C.compress.archive_step:
 			np.savez(cache_fn, **dict(zip(step_vec_keys, step_vector)))
 	else:
 		raise RuntimeError
 
-	plot_compression_flow(step_vector, filename, att_names, C.steps)
+	plot_compression_flow(step_vector, filename, att_names, C.steps, outer_grid=outer_grid)
 	print('done.')
 	
+def quantisation_simulator(quantise_bits=8, axis=(1, 2), rans=False):
+	def inner_quantisation(data):
+		return sim_quantisation(data, quantise_bits, axis, rans=rans)
+	return inner_quantisation
 
-def plot_reduced_dataset(pca, z_s, att, k, att_ind, filename):
-	import warnings
-	raise warnings.DeprecationWarning
-	# sort from highest variance
-	from sklearn.decomposition import PCA
-	if isinstance(pca, PCA):
-		components = pca.components_[:k][::-1]
-		var_exp = pca.explained_variance_[:k][::-1]
-		ratio_var_exp = pca.explained_variance_ratio_[:k][::-1]
-		'''z_s, y = label_zs(z_s)'''
-		from celeb_simil import subset_attributes, category_from_onehot
+def sim_quantisation(data, quantise_bits, axis=0, rans=False):
+	filename = f'data/glow_ffhq128/rANS_compress_ffhq/{dt.datetime.now().isoformat()}_rANS_log.txt'
+	assert isinstance(quantise_bits, int)
+	quantise_lvls = 2 ** quantise_bits - 1
+	# q_data = red_data[-1].copy()
+	data_std = data.std(axis=axis, keepdims=True)
+	data /= data_std
+	data_min = data.min(axis=axis, keepdims=True)
+	data -= data_min
+	data[data == 0.0] = 0.0000000000001
+	bits_ratio = quantise_lvls/data.max(axis=axis, keepdims=True)
+	data *= bits_ratio
+	q_data = np.rint(data)
+	if rans: 
+		from rANSCoder import Encoder, Decoder
+		from time import time
+		q_data = q_data.astype(np.int16)
+		uni_vals, freq_vals = np.unique(q_data, return_counts=True)
+		missing_vals = [i for i in range(quantise_lvls) if i not in list(uni_vals)]
+		import ipdb; ipdb.set_trace()
 		
-		sel_att_df = subset_attributes(att, att_ind, overall_indexer=True, complementary=True)
-		red_z = pca.transform(z_s[ sel_att_df.iloc[:, -1]].reshape(sel_att_df.shape[0], -1))
-		reduced_z = red_z[:, :k][:,::-1]   # PCs['X'].T becomes (306,10000)
-	else: # should be type: sklearn.decomposition.PCA
-		raise NotImplementedError
-	
-	from matplotlib import pyplot as plt
+		probs = freq_vals / q_data.size
+		for m in missing_vals:
+			probs = np.insert(probs, m, 0.000000000001)
 
-	symbols = "." # can be used for orthogonal attributes.
-	n_pcs = k # can use this to index components and create grid.
-	fs = int(n_pcs * 2)
-	fig, axs = plt.subplots(n_pcs, n_pcs, figsize=(fs, fs), sharex='col', sharey='row')
-	cmap = plt.cm.winter # get_cmap('Set1')
+		probs /= np.sum(probs)
 
-	# Use subset dataframe turn 1 hot vectors into indices,
-	# then add column for "both" categories if overlapping.
-	color_series, overlapping_attributes = category_from_onehot(sel_att_df)
-	# color_series += 2 # make it red
-	
-	for row in range(n_pcs):
-		# random permutation of reduced datapoints for 
-		# visualization that is evened among categories. 
-		# indices = np.random.permutation(reduced_z.shape[0])
-		# reduced_z = np.take(reduced_z, indices, axis=0)
-		# y = np.take(y, indices)
-		for col in range(n_pcs):
-			if row > col:
-				path_c = axs[row, col].scatter(reduced_z[:,col], reduced_z[:,row], c=np.array(color_series), cmap=cmap, s=.50, alpha=0.6)
-				axs[row, col].annotate('% VE:\nC{}={:.2f}\nC{}={:.2f}'.format(n_pcs - row, ratio_var_exp[row]*100,
-										 n_pcs-col, ratio_var_exp[col]*100), xy=(0.7, 0.7), xycoords='axes fraction', fontsize='xx-small')
-				if row == n_pcs-1:
-					axs[row, col].set_xlabel(f'component {n_pcs-col}') 
-					axs[row, col].tick_params(axis='x', reset=True, labelsize='x-small')
-				if col == 0:
-					axs[row, col].set_ylabel(f'component {n_pcs-row}')
-					axs[row, col].tick_params(axis='y', reset=True, labelsize='x-small')
-			else:
-				axs[row, col].remove()
-				axs[row, col] = None
+		rans_encoder = Encoder()
+		lengths, enc_times, dec_times = list(), list(), list()
+		for i, image in enumerate(q_data):
+			img_shape = image.shape
+			T1 = time()
+			flt_img = image.flatten()
+			for px_val in flt_img:
+				rans_encoder.encode_symbol(probs, px_val)
 
-	handles, labels = path_c.legend_elements(prop='colors')
-	if overlapping_attributes:
-		assert isinstance(att_ind, (list, tuple))
-		labels = att.columns[np.array(att_ind)] + ['both']
-	else:
-		assert isinstance(att_ind, int)
-		labels= [att.columns[att_ind]] + ['Complement cat.']
-	plt.legend(handles, labels, bbox_to_anchor=(.75, .75), loc="upper right", 
-	           bbox_transform=fig.transFigure)
-	
-	fig.tight_layout()
-	fig.subplots_adjust(top=.88)
-	plt.savefig(filename, bbox_inches='tight')
-	plt.close()
-	print(f'Saved to {filename}.')
+			encoded_img = rans_encoder.get_encoded()
+			lengths.append(len(encoded_img))
+			encoding_T = time() - T1
+
+			rans_decoder = Decoder(encoded_img)
+			decoded_img = []
+			T2 = time()
+			for _ in range(len(encoded_img)):
+				decoded_img.append(rans_decoder.decode_symbol(probs))
+			decoded_img.reverse()
+			decoding_T = time() - T2
+			enc_times.append(encoding_T)
+			dec_times.append(decoding_T)
+			q_data[i] = np.array(decoded_img).reshape(img_shape)
+
+		commas = lambda x : ','.join(map(str, x))
+		text = ['Bit lengths,{commas(lengths)}\n']
+		text += 'Encoding times,{commas(enc_times)}\n'
+		text += 'Decoding times,{commas(dec_times)}\n'
+		with open(filename, 'w') as log_f:
+			log_f.writelines(text)
+		print(f"log written to: {filename}")
+		data = (q_data / bits_ratio + data_min) * data_std
+		return data, bit_lengths
+	# inverse
+	data = (q_data / bits_ratio + data_min) * data_std
+	print(f"simulated quantisation with bits: {quantise_lvls+1} on axes: {axis}")
+	return data
 
 
 if __name__ == '__main__':

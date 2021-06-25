@@ -42,6 +42,8 @@ def main(C):
 	if C.training.resume: # or not C.resume:
 		# XXX changed
 		# C.model_dir = find_last_model_relpath(C.training.root_dir) # /model_{str(i + 1).zfill(6)}.pt'
+
+		import ipdb; ipdb.set_trace()
 		if os.path.isfile(f'{C.training.root_dir}/best_model'): 
 			with open(f'{C.training.root_dir}/best_model', 'r') as bm:
 				C.model_dir = bm.readline().strip()
@@ -373,7 +375,7 @@ if __name__ == '__main__':
 	# import ipdb; ipdb.set_trace()
 	conf_name = 'config/celeba128_c.yml'
 	parser = ArgumentParser(description='Glow training on different datasets.')
-	parser.add_argument('--config', '-c', default=conf_name, dest='config')
+	parser.add_argument('--config', '-c', default=conf_name)
 	ap = parser.parse_args()
 
 	C = ConfWrap(fn=ap.config)

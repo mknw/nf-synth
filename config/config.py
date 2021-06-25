@@ -8,11 +8,10 @@ class ConfWrap(object):
 			d = {}
 		elif fn:
 			stream = open(fn, 'r')
-			# import ipdb; ipdb.set_trace()
 			d = yaml.safe_load(stream)
 			stream.close()
 		assert isinstance(d, dict), 'only yaml dictionaries supported!\
-		                                (i.e. without hyphen)'
+		                            (i.e. without hyphen)'
 		
 		supr = super(ConfWrap, self)
 		supr.__setattr__('_data', d)
@@ -89,6 +88,14 @@ class ConfWrap(object):
 					print(f'\t{l}: {w}')
 			else:
 				print(f'{k}: {v}')
+	
+	def dump(self, filepath=None):
+		if filepath is not None:
+			with open(filepath, 'w') as yaml_file:
+				yaml.safe_dump(self._data, yaml_file)
+		else:
+			yaml.safe_dump(self._data)
+
 	
 
 if __name__ == "__main__":

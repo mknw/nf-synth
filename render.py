@@ -99,13 +99,18 @@ def plot_compression_flow(data_arrays, filename, att_names, steps,
 	# reformat images
 	if 'umap' in steps:
 		# XXXto change
-		names= ['X', 'Z', 'PCA scores', 'UMAP projection', 'Rec_Z', 'Rec_X']
-	else:
-		names= ['X', 'Z', 'eigen-Zs', 'PCA scores', 'Rec_Z', 'Rec_X']
-	#Permute as follows:
+		names = ['X', 'Z', 'PCA scores', 'UMAP projection', 'Rec_Z', 'Rec_X']
+		permutation_array = [0, 1, 2, 5, 4, 3]
+	elif 'pca' in steps:
+		names = ['X', 'Z', 'eigen-Zs', 'PCA scores', 'Rec_Z', 'Rec_X']
+		permutation_array = [0, 1, 2, 5, 4, 3]
+	elif 'svd' in steps:
+		# average over eigen-zs
+		names= ['X', 'eigen-Zs', 'Rec_Z', 'Rec_X']
+		permutation_array = [0, 1, 3, 2]
+	#Permute as ordered below:
 	#        0,    1,    2,          5,       4,      3
 	# names= ['X', 'Z', 'eigen-Zs',  'Rec_X', 'Rec_Z','PCA scores']
-	permutation_array = [0, 1, 2, 5, 4, 3]
 	data_arrays = [data_arrays[i] for i in permutation_array]
 	names = [names[i] for i in permutation_array]
 
@@ -117,9 +122,6 @@ def plot_compression_flow(data_arrays, filename, att_names, steps,
 
 	import matplotlib.patches as patches
 
-	# TODO: instead of patching figure with 1 axes, 
-	# we create 1 ax per higher specgrid item.
-
 	# ax_over = plt.axes([0,0,1,1], facecolor=(1,1,1,0))
 
 	# rect = patches.Rectangle((0.07, 0.05), 0.85, 0.9, linewidth=1,
@@ -129,65 +131,65 @@ def plot_compression_flow(data_arrays, filename, att_names, steps,
 	plt.close()
 	print(f'plot saved to: {filename}')
 
-def build_quadrant(step, data, axs, att_names=None, haunted=0): # , std=None):
+def build_quadrant(step, data, axs, att_names=None): # , std=None):
 
 	# if i in [3]: # pca, umap
 	if step.lower().startswith(('umap', 'pca')):
 		plot_scattergrid(data, axs, step, att_names)
 		return
 	elif step.lower() in ['x', 'z', 'eigen-zs', 'rec_z', 'rec_x']:
-		# 
-		dim = int(not haunted) # 1
-		##  if step.lower() == 'eigen-zs':
-		##  	import ipdb; ipdb.set_trace()
-		# we normalize **parsimoniously** to preserve as much structure:
-		#1. Subtract the minimum, only for Z's with values < 0
-		try: # should be solved (step_vector from archive was null)
-			d_min = data.min(dim, keepdims=True)
-		except TypeError:
-			import ipdb; ipdb.set_trace()
-		d_min[d_min>0] = 0
-		data -= d_min
-		#2. Divide by maximum, only for Z's with values > 1
-		d_max = data.max(dim, keepdims=True)
-		# except for Z's eigenvector, which would otherwise be too close to 0.
-		if step.lower().endswith('x'): #  == 'eigen-zs':
-			d_max[d_max<1] = 1
-		data /= d_max
-		# if not step.lower().endswith(('x', 'z')) \
-		# 		or (np.any(d_min < 0)) or (np.any(d_max > 1)):
-		# data = (data - d_min) / (d_max) # remove extra-white aberrations
-		n_dp = data.shape[0] # n datapoints
-		img_size = (data.size // (n_dp * 3)) **.5
-		# print(f'{img_size} images reshaped')
-		img_size = int(img_size)
-		if img_size == 1:
-			import ipdb; ipdb.set_trace()
-		data = np.moveaxis(data.reshape(n_dp, 3, img_size, img_size), 1, -1)
-		col_count = 0
-		for row in range(4):
-			for col in range(4):
-				if col+(4*row) < data.shape[0]:
-					img = (data[col + 4*row].copy() * 255).astype(np.uint8)
-					axs[row, col].imshow(img, interpolation='none')
-					if step.lower() in ['x', 'z', 'rec_z', 'rec_x']:
-						if col == 0:
-							try:
-								axs[row, col].set_ylabel(f'{att_names[row]}', fontsize='small')
-							except IndexError:
-								import ipdb; ipdb.set_trace()
-						if row == 0 and col == 0:
-							axs[row, col].set_title(step, fontsize='x-large')
-					else:
-						axs[row, col].set_title(f'eigen-Z {col*4+row}', fontsize='small')
-					axs[row, col].set(xticks=[], yticks=[])
-				else:
-					axs[row, col].remove()
-					axs[row, col] = None
-			col_count += 1
+		plot_imggrid(step, data, axs, att_names)
+	elif step.lower().startswith('svd'):
+		plot_expvar(data, axs)
 	else:
 		print(f'found unknown step: {step}')
 		raise NotImplementedError
+
+
+def plot_imggrid(step, data, axs, att_names, haunted=0):
+	dim = int(not haunted) # 1
+	##  if step.lower() == 'eigen-zs':
+	##  	import ipdb; ipdb.set_trace()
+	# we normalize **parsimoniously** to preserve as much structure:
+	#1. Subtract the minimum, only for Z's with values < 0
+	d_min = data.min(dim, keepdims=True)
+	d_min[d_min>0] = 0
+	data -= d_min
+	#2. Divide by maximum, only for Z's with values > 1
+	d_max = data.max(dim, keepdims=True)
+	# except for Z's eigenvector, which would otherwise be too close to 0.
+	if step.lower().endswith('x'): #  == 'eigen-zs':
+		d_max[d_max<1] = 1
+	data /= d_max
+	# if not step.lower().endswith(('x', 'z')) \
+	# 		or (np.any(d_min < 0)) or (np.any(d_max > 1)):
+	# data = (data - d_min) / (d_max) # remove extra-white aberrations
+	n_dp = data.shape[0] # n datapoints
+	img_size = (data.size // (n_dp * 3)) **.5
+	# print(f'{img_size} images reshaped')
+	img_size = int(img_size)
+	# if img_size == 1:
+	# 	import ipdb; ipdb.set_trace()
+	data = np.moveaxis(data.reshape(n_dp, 3, img_size, img_size), 1, -1)
+	col_count = 0
+	for row in range(4):
+		for col in range(4):
+			if col+(4*row) < data.shape[0]:
+				img = (data[col + 4*row].copy() * 255).astype(np.uint8)
+				axs[row, col].imshow(img, interpolation='none')
+				if step.lower() in ['x', 'z', 'rec_z', 'rec_x']:
+					if col == 0:
+						axs[row, col].set_ylabel(f'{att_names[row]}', fontsize='small')
+					if row == 0 and col == 0:
+						axs[row, col].set_title(step, fontsize='x-large')
+				else:
+					axs[row, col].set_title(f'eigen-Z {col*4+row}', fontsize='small')
+				axs[row, col].set(xticks=[], yticks=[])
+			else:
+				axs[row, col].remove()
+				axs[row, col] = None
+		col_count += 1
+
 
 def plot_scattergrid(data, axs, step, att_names, grid_size=4):
 	if step.lower().startswith('pca'):
@@ -200,6 +202,8 @@ def plot_scattergrid(data, axs, step, att_names, grid_size=4):
 	cmap = plt.cm.rainbow
 	series = np.repeat(color_series, 4)
 
+	axs[0, 0].get_shared_x_axes().join(*axs.flatten())
+
 	for row in range(n_pcs):
 		for col in range(n_pcs):
 			if row > col:
@@ -208,17 +212,24 @@ def plot_scattergrid(data, axs, step, att_names, grid_size=4):
 				if row == n_pcs-1:
 					axs[row, col].set_xlabel(f'{comp_name} {n_pcs-col}') 
 					axs[row, col].tick_params(axis='x', reset=True, labelsize='x-small')
+				else:
+					# remove x axis
+					axs[row, col].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
 				if col == 0:
 					axs[row, col].set_ylabel(f'{comp_name} {n_pcs-row}')
 					axs[row, col].tick_params(axis='y', reset=True, labelsize='x-small')
+				else:
+					# remove y axis 
+					axs[row, col].tick_params(axis='y', which='both', right=False, left=False, labelleft=False)
 			else:
 				axs[row, col].remove()
 				axs[row, col] = None
 	
 	handles, labels = path_c.legend_elements(prop='colors')
 	labels = att_names
-	plt.legend(handles, labels, loc="upper right", bbox_to_anchor=(.75, 5))
-	# bbox_to_anchor=(.75, .25), bbox_transform=fig.transFigure)
+	fig = axs[0, 0].get_figure()
+	plt.legend(handles, labels, loc="upper right", bbox_to_anchor=(.7, .7),
+	                                       bbox_transform=fig.transFigure)
 
 
 def plot_reconstruction(reduced_z, att, filename, n_examples, net, device,

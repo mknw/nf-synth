@@ -4,7 +4,7 @@ net:
     lu_conv: True
     n_flows : 16
     n_blocks : 4
-    gpus: [0]
+    gpus: [0] # [0, 1]
     benchmark: True
 
 training:
@@ -13,7 +13,7 @@ training:
     dataset: ffhq
     in_channels: 3
     img_size: 128
-    batch_size: 128
+    batch_size: 8
     n_samples: 16
     n_workers: 8
     learning_rate: 0.0001
@@ -32,26 +32,32 @@ sampling:
     out_dir: out_11
 similarity:
     data: ['MEAN', 'STD', 'X', 'Z']
-    use_data_archive: True
+    use_data_archive: True # True
+    archive_data: True
     dataset: celeba
     track_y: False # will stay F.
+    batch_size: 128
+    img_size: 128
 compress:
     data: ['X', 'Z']
-    dataset: celeba # celeba
-    dataset_ratios: [.1, .4, 0.6, 0.8, 1.]
-    steps: [[net, pca]] # , [net, pca, umap]]
+    dataset: celeba # celeba or ffhq
+    dataset_ratios: 1. # [.1, .4, 0.6, 0.8, 1.]
+    steps: [[net, svd]] # [[net, pca], [net, svd, umap]]
     no_model: False
-    quantise: False # 8 to 5 bits or False
-    # Use/create Archives
-    use_data_archive : False # True
+    quantise: 8 # 8 to 5 bits or False
+    rans: True
+    ## Use/create Archives
+    use_data_archive :  True # True
     use_step_archive : False
-    archive_data : False
-    archive_step : True
+    # only works if use_x_archive = False
+    archive_data : True
+    archive_step : False # needs high memory space
     ## PCA
     pca_n_pcs: "(2, 17)" # "(2, 15)"
-    # n_pcs_sc: 20
-    pca_whiten: True
-    # n_pcs_cluster: "[i for i in range(0, 39, 5)]" # not used
+    pca_whiten: False
+    ## Image SVD
+    # params:
+    tile_RGB: h
     ## UMAP
     umap_nn: 20
     umap_min_dist: 0.0

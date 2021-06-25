@@ -102,8 +102,8 @@ def sample_from_directory(path, batch, image_size, test=False, shuffle=False,
 def load_ffhq(batch=256, image_size=128, test=False, shuffle=None,
 	 path='data/FFHQ/thumbnails128x128', norm=None, log_path=None, seed=2147483647):
 	''' Single loop iterator, mainly used for stats retrieval.'''
-	warn('This function should only be used for similarity'
-	              'analysis. For training a network, see `sample_from_directory`.')
+	warn('This function should only be used for similarity and compression'
+	      ' analyses. For training a network, see `sample_from_directory`.')
 	# this takes care of all seeds througout torch processes.
 	# seed = 2147483647 is used for FFHQ split set replicability.
 	if image_size > 128:
@@ -670,7 +670,7 @@ class Attributes:
 	proper column labeling for celeba attributes'''
 
 	def __init__(self, dataset='celeba', wait=False):
-		self.ds = dataset.lower()
+		self.dataset = dataset.lower()
 		self.csv_fn = f'gt/{dataset.lower()}_attr_y.csv'
 		self.pkl_fn = f'gt/{dataset.lower()}_attr_y.pkl'
 		if dataset == 'celeba':

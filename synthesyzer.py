@@ -22,7 +22,7 @@ from numpy.linalg import svd
 class  Synthesizer(object):
 	def __init__(self, C, steps = ['net', 'pca', 'umap'],
 							net=None, device=None,
-							store_config=True, svd_solver='auto'):
+							store_config=True, quantise_fun=None, svd_solver='auto'):
 
 		np.random.seed(24)
 		if isinstance(steps, str):
@@ -53,7 +53,8 @@ class  Synthesizer(object):
 						                  random_state=42, svd_solver=svd_solver)
 			if step == 'svd':
 				self.models[step] = batch_SVD(n_components=C.pca_n_pcs, whiten=C.pca_whiten,
-						img_size = C.img_size, img_channels = C.in_channels)
+						img_size = C.img_size, img_channels = C.in_channels, tile_RGB=C.tile_RGB, 
+						quantise_fun = quantise_fun)
 			if step == 'umap':
 				self.models[step] = UMAP(n_neighbors = C.umap_nn, min_dist = C.umap_min_dist,
 			                    n_components = C.umap_n_comps, random_state=42)
@@ -144,6 +145,7 @@ class  Synthesizer(object):
 					data = self.models[step].fit_transform(data)
 				if step in selected_steps:
 					out.append(data)
+		# ADD QUANTISATION
 		return out
 	
 	def select_steps(self, show_steps):
@@ -232,13 +234,17 @@ class batch_SVD:
 	'''
 	
 	def __init__(self, n_components, whiten, img_size, img_channels,
-		          random_state=123129387):
+		          tile_RGB=False, quantise_fun=None, random_state=123129387):
 		self.n_components = n_components
 		self.whiten = whiten
+		if self.whiten:
+			warn("batch_SVD with whiten=True is unstable. Please use plain version.")
 		self.center = True
 		# TODO: change param names to match.
 		self.im_s = img_size
 		self.im_ch = img_channels
+		self.tile_RGB = tile_RGB
+		self.quantise_fun = quantise_fun
 	
 	def fit(self, X, y=None):
 
@@ -256,7 +262,9 @@ class batch_SVD:
 			# changed this for stacked pca
 			U *= np.sqrt(self.im_s - 1)
 		else:
-			U *= S[:, :self.n_components_, np.newaxis] # need to chance
+			U *= S[:, np.newaxis, :self.n_components]
+		# if self.quantise_fun:
+		# 	U = self.quantise_fun(U)
 		return U
 
 	def _preproc_img(self, X):
@@ -264,9 +272,16 @@ class batch_SVD:
 		if X.shape[0] == 1:
 			raise ValueError("Only batch of images accepted")
 		
-		n_imgs= X.shape[0]
-		if len(X.shape) == 2 or len(X.shape) == 4:
-			X = X.reshape(n_imgs*self.im_ch, self.im_s, self.im_s)
+		n_imgs = X.shape[0]
+		if not self.tile_RGB:
+			if len(X.shape) == 2 or len(X.shape) == 4:
+				X = X.reshape(n_imgs*self.im_ch, self.im_s, self.im_s)
+		elif self.tile_RGB == 'v':
+			X = X.reshape(n_imgs, self.im_s * self.im_ch, self.im_s)
+		elif self.tile_RGB == 'h':
+			X = X.reshape(n_imgs, self.im_s, self.im_s * self.im_ch)
+		else:
+			raise ValueError
 
 		if not 0 < self.n_components <= min(X.shape[-2:]):
 			raise ValueError
@@ -282,31 +297,43 @@ class batch_SVD:
 
 		n_components = self.n_components
 
-		# numpy.linalg.svd
+		# Using numpy.linalg.svd which computes SVD for each matrix in the stack.
 		U, S, Vt = svd(X, full_matrices=False)
-		# flip eigenvectors' sign to enforce deterministic output
-		# TODO: fix n_dimensional svd_flip_
+		
+		# TODO: flip eigenvectors' sign to enforce deterministic output.
 		# U, Vt = batch_svd_flip_(U, Vt)
 
-		self.components_ = Vt[:, :n_components, :]
-		U = U[..., :n_components]
+		if self.quantise_fun:
+			print("performing quantisation at SVD level.")
+			self.components_, bits_Vt = self.quantise_fun(Vt[:, :n_components, :])
+			U, bits_U = self.quantise_fun(U[..., :n_components])
+			self.bit_count = bits_Vt + bits_U
+		else:
+			self.components_ = Vt[:, :n_components, :]
+			U = U[..., :n_components]
 
-		explained_variance_ = np.square(S[:, :n_components]) / (self.im_s - 1)
+		sample_size = U.shape[1]
+		explained_variance_ = S**2 / sample_size
 		total_var = explained_variance_.sum(axis=1)
 		explained_variance_ratio_ = explained_variance_ / total_var[:, np.newaxis]
 		# singular_values_ = S.copy()
 
 		# noise variance for each image.
-		self.noise_variance_ = (np.square(S[:, n_components:]) / (self.im_s - 1)).mean(axis=-1)
+		self.noise_variance_ = (np.square(S[:, n_components:]) / (sample_size - 1)).mean(axis=-1)
 		self.explained_variance_ = explained_variance_
 		self.mean_ = mean_
 		return U, S, Vt
 
 
 	def _postproc(self, X):
-		return X.reshape(int(X.shape[0]/self.im_ch), self.im_ch, self.im_s, self.im_s)
+		if not self.tile_RGB:
+			return X.reshape(int(X.shape[0]/self.im_ch), self.im_ch, self.im_s, self.im_s)
+		else:
+			return X.reshape(X.shape[0], self.im_ch, self.im_s, self.im_s)
+
 
 	def transform(self, X):
+		raise NotImplementedError
 		X = self._preproc_imgs(X)
 		X -= self.mean_
 		
@@ -317,14 +344,14 @@ class batch_SVD:
 
 	def inverse_transform(self, X):
 		if self.whiten:
-			scaled_components = self.explained_variance_[:, :, np.newaxis] * \
+			scaled_components = np.sqrt(self.explained_variance_[:, :, np.newaxis]) * \
 		            self.components_
 			X_t = X @ scaled_components
 			X_t += self.mean_
 			return self._postproc(X_t)
 		else:
 			X_t = X @ self.components_ + self.mean_
-		return X_t
+		return self._postproc(X_t)
 
 
 def batch_svd_flip_(u, v, u_based_decision=True):

@@ -4,7 +4,7 @@ net:
     lu_conv: True
     n_flows : 16
     n_blocks : 4
-    gpus: [0, 1]
+    gpus: [0]
 
 training:
     n_bits: 5
@@ -12,7 +12,7 @@ training:
     dataset: celeba
     in_channels: 3
     img_size: 128
-    batch_size: 32 # 8 if gpus = [0]; 32 if gpus = [0, 1]
+    batch_size: 8 # 8 if gpus = [0]; 32 if gpus = [0, 1]
     n_samples: 16
     n_workers: 8
     learning_rate: 0.0001
