@@ -67,7 +67,6 @@ def analyse_epoch(C, model_meta_stuff = None):
 	s_str = '-'.join(_stats).lower()
 	archive_filename = f'{root_dir}/{s_str}_{C.similarity.dataset}.npz'
 
-	import ipdb; ipdb.set_trace()
 	if os.path.isfile(archive_filename) and C.similarity.use_data_archive:
 		print(f'Found archive {archive_filename}, no looping over test set required.')
 		stats = dict()
