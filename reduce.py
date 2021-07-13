@@ -321,14 +321,29 @@ def sim_quantisation(data, quantise_bits, axis=0, rans=False):
 		from rANSCoder import Encoder, Decoder
 		from time import time
 		q_data = q_data.astype(np.int16)
+		# express probability of integer quantised values as frequencies
 		uni_vals, freq_vals = np.unique(q_data, return_counts=True)
 		missing_vals = [i for i in range(quantise_lvls) if i not in list(uni_vals)]
-		import ipdb; ipdb.set_trace()
 		
 		probs = freq_vals / q_data.size
 		for m in missing_vals:
+			# give lowest prob. to integers in range 0-2^(N bits), but not appearing in Z.
+			# XXX Is this what give the wrong number of bits in decoding phase?
 			probs = np.insert(probs, m, 0.000000000001)
-
+		''' But maybe: 
+			Encode:
+			1. create a vector = np.range(len(img))
+			2. new_freq_vals = [v for v in freq_vals if v != 0]
+			3. probs = new_freq_vals / np.sum(new_freq_vals)
+			Decode:
+			img = list()
+			for i in range(len(decoded_img)):
+				if freq_vals[i] != 0:
+					img.append(decoded_img[i])
+				else:
+					img.append(0)
+		'''
+		# normalise probs
 		probs /= np.sum(probs)
 
 		rans_encoder = Encoder()
