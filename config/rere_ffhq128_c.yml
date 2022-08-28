@@ -1,0 +1,54 @@
+# REnder REduce config
+# Contains:
+# - general parameters for different Synth. models
+#   - net
+#   - pca
+#   - umap
+# - specific parameters for each type of analysis
+#   - `compute_reduction_upsampling`
+#   - `pca_reduction_on_attributes`
+#
+# Models will only be loaded for each analysis only if needed.
+# Each analysis field is named with the initials of the respective function in reduced.py, i.e.:
+#   - `c_r_u`; and
+#   - `p_r_o_a`
+# General model parameters are kept and considered defaults if omitted in the analysis field.
+---
+net:
+    arch: glow
+    n_samples: 64
+    affine: True
+    lu_conv: True
+    n_flows : 16
+    n_blocks : 4
+    n_bits: 5
+    temp : 0.7
+    gpus: [0]
+    benchmark: True
+
+training: # should change to "loop" (e.g. in reduce.py)
+    root_dir: data/glow_ffhq128
+    dataset: ffhq
+    in_channels: 3
+    img_size: 128
+    batch_size: 256
+    n_samples: 64
+    n_workers: 8
+    resample: True
+
+pca:
+    n_pcs_reupsam: "(2, 15)"
+    n_pcs_sc: 15
+    whiten: True
+    # n_pcs_cluster: "[i for i in range(0, 39, 5)]" # not used
+
+umap:
+    nn: 20
+    min_dist: 0.1
+    n_comps: "(2, 5)" # "(2, 19, 5)"
+data: ['X', 'Z']
+dataset_ratios: [.1, .4, 0.6, 0.8, 1.]
+steps: [[net, pca]] # , [net, pca, umap]]
+no_model: False
+dataset: celeba
+quantise: False # 8 to 5 bits or False

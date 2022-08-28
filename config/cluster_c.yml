@@ -1,0 +1,39 @@
+## Cluster config
+---
+net:
+    arch: glow
+    n_samples: 64
+    affine: False
+    lu_conv: True # useful for dataset_ratois
+    n_flows : 32
+    n_blocks : 4
+    n_bits: 5
+    temp : 0.7
+    gpus: [0]
+    benchmark: True
+training:
+    root_dir: data/glow_celeba
+    dataset: celeba
+    in_channels: 3
+    img_size: 64
+    batch_size: 8
+    n_samples: 64
+    n_workers: 8
+    resample: True
+
+pca:
+    n_pcs_reupsam: "(2, 15)"
+    n_pcs_sc: 20
+    whiten: True
+    # n_pcs_cluster: "[i for i in range(0, 39, 5)]" # not used
+
+umap:
+    nn: 20
+    min_dist: 0.0
+    n_components: "(2, 19, 2)"
+data: ['z']
+dataset_ratio: [0.1, 0.4]
+steps: [net, pca, umap]
+save_vector_cache: True
+archive_data: True
+use_data_archive: True
